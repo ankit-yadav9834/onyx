@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Settings, Key, Bell, Globe, Shield, Database, Webhook, Copy } from 'lucide-react';
 import { Badge } from '@/components/ui';
 import { cn } from '@/lib/utils';
+import { useSettings } from '@/lib/storage';
 
 const SECTIONS = [
   { id: 'general', label: 'General', icon: Globe },
@@ -13,6 +14,7 @@ const SECTIONS = [
 ];
 
 export function SettingsPage() {
+  const [settings, setSettings] = useSettings();
   const [section, setSection] = useState('general');
 
   return (
@@ -63,7 +65,7 @@ function Card({ title, desc, children }: { title: string; desc: string; children
   );
 }
 
-function Toggle({ on, label, desc }: { on: boolean; label: string; desc: string }) {
+function Toggle({ on, label, desc, onToggle }: { on: boolean; label: string; desc: string; onToggle?: (val: boolean) => void }) {
   const [enabled, setEnabled] = useState(on);
   return (
     <div className="flex items-center justify-between border-b border-line/40 py-3 last:border-0">
@@ -72,7 +74,11 @@ function Toggle({ on, label, desc }: { on: boolean; label: string; desc: string 
         <div className="text-2xs text-ink-500">{desc}</div>
       </div>
       <button
-        onClick={() => setEnabled(!enabled)}
+        onClick={() => {
+          const next = !enabled;
+          setEnabled(next);
+          onToggle?.(next);
+        }}
         className={cn(
           'relative h-5 w-9 rounded-full transition-colors',
           enabled ? 'bg-ink-900' : 'bg-ink-200',
@@ -98,18 +104,48 @@ function Field({ label, value, placeholder }: { label: string; value?: string; p
 }
 
 function GeneralSection() {
+  const [settings, setSettings] = useSettings();
+
   return (
     <>
       <Card title="Workspace" desc="Organization-level configuration">
         <div className="space-y-4">
-          <Field label="Workspace Name" value="OrchestrAI Production" />
-          <Field label="Workspace ID" value="ws_8f2a9c1e" />
           <div>
-            <label className="label">Default Region</label>
-            <select className="mt-1.5 w-full rounded-lg border border-line bg-white px-3 py-2 text-sm text-ink-900 focus:outline-none">
-              <option>us-east-1</option>
-              <option>us-west-2</option>
-              <option>eu-west-1</option>
+            <label className="label">Language</label>
+            <select 
+              value={settings.language}
+              onChange={(e) => setSettings({ language: e.target.value })}
+              className="mt-1.5 w-full rounded-lg border border-line bg-white px-3 py-2 text-sm text-ink-900 focus:outline-none"
+            >
+              <option>English</option>
+              <option>Spanish</option>
+              <option>French</option>
+              <option>Japanese</option>
+            </select>
+          </div>
+          <div>
+            <label className="label">Default Model (OpenRouter)</label>
+            <select 
+              value={settings.model}
+              onChange={(e) => setSettings({ model: e.target.value })}
+              className="mt-1.5 w-full rounded-lg border border-line bg-white px-3 py-2 text-sm text-ink-900 focus:outline-none"
+            >
+              <option value="google/gemini-2.5-flash">Gemini 2.5 Flash</option>
+              <option value="anthropic/claude-3.5-sonnet">Claude 3.5 Sonnet</option>
+              <option value="openai/gpt-4o">GPT-4o</option>
+              <option value="meta-llama/llama-3-70b-instruct">Llama 3 70B</option>
+            </select>
+          </div>
+          <div>
+            <label className="label">Theme</label>
+            <select 
+              value={settings.theme}
+              onChange={(e) => setSettings({ theme: e.target.value as 'light'|'dark'|'system' })}
+              className="mt-1.5 w-full rounded-lg border border-line bg-white px-3 py-2 text-sm text-ink-900 focus:outline-none"
+            >
+              <option value="system">System</option>
+              <option value="light">Light</option>
+              <option value="dark">Dark</option>
             </select>
           </div>
         </div>
@@ -188,9 +224,16 @@ function WebhooksSection() {
 }
 
 function NotificationsSection() {
+  const [settings, setSettings] = useSettings();
+
   return (
     <Card title="Notifications" desc="Alert and digest preferences">
-      <Toggle on={true} label="Pipeline failures" desc="Alert when any stage fails" />
+      <Toggle 
+        on={settings.notifications} 
+        onToggle={(val) => setSettings({ notifications: val })}
+        label="Pipeline failures" 
+        desc="Alert when any stage fails" 
+      />
       <Toggle on={true} label="Consensus conflicts" desc="Notify on split or weighted resolutions" />
       <Toggle on={false} label="Cost threshold" desc="Alert when daily spend exceeds budget" />
       <Toggle on={true} label="Model degradation" desc="Alert when reliability drops below 95%" />

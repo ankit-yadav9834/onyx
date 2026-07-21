@@ -3,7 +3,6 @@ import {
   ShieldCheck,
   CheckCircle2,
   AlertTriangle,
-  XCircle,
   Brain,
   FileText,
   Calculator,
@@ -15,51 +14,91 @@ import {
 import { Badge, Bar, MetricCard, ScoreRing } from '@/components/ui';
 import { cn, pct } from '@/lib/utils';
 import { MODELS } from '@/lib/models';
+import { useQuerySessions } from '@/lib/storage';
 
-const CHECK_DEFS = [
-  { name: 'Fact Check', icon: Brain, desc: 'Claims verified against retrieved evidence' },
-  { name: 'Citation Check', icon: Quote, desc: 'Source provenance and trust verified' },
-  { name: 'Hallucination Detector', icon: AlertTriangle, desc: 'Unsupported content flagged' },
-  { name: 'Logic Validator', icon: GitCompare, desc: 'Reasoning chain consistency' },
-  { name: 'Safety Checker', icon: Lock, desc: 'Policy & compliance enforcement' },
-  { name: 'Math Validator', icon: Calculator, desc: 'Numerical results recomputed' },
-  { name: 'JSON Validator', icon: Code2, desc: 'Structured output schema validation' },
-  { name: 'Contradiction Detector', icon: FileText, desc: 'Cross-model agreement check' },
-];
+const CHECK_ICONS: Record<string, any> = {
+  'Fact Check': Brain,
+  'Citation Check': Quote,
+  'Hallucination Detector': AlertTriangle,
+  'Logic Validator': GitCompare,
+  'Safety Checker': Lock,
+  'Math Validator': Calculator,
+  'JSON Validator': Code2,
+  'Contradiction Detector': FileText,
+};
+
+const CHECK_DESCS: Record<string, string> = {
+  'Fact Check': 'Claims verified against retrieved evidence',
+  'Citation Check': 'Source provenance and trust verified',
+  'Hallucination Detector': 'Unsupported content flagged',
+  'Logic Validator': 'Reasoning chain consistency',
+  'Safety Checker': 'Policy & compliance enforcement',
+  'Math Validator': 'Numerical results recomputed',
+  'JSON Validator': 'Structured output schema validation',
+  'Contradiction Detector': 'Cross-model agreement check',
+};
 
 const JUDGE_MODELS = ['gpt-5-judge', 'claude-judge', 'gemma-3-27b'] as const;
 
-function genChecks() {
-  return CHECK_DEFS.map((def, i) => {
-    const status = i === 2 ? 'warn' : i === 5 ? 'warn' : 'pass';
-    const score = status === 'pass' ? 0.9 + (i % 10) / 100 : 0.72 + (i % 8) / 100;
-    return {
-      ...def,
-      status: status as 'pass' | 'warn' | 'fail',
-      score,
-      checker: JUDGE_MODELS[i % JUDGE_MODELS.length],
-      latencyMs: 90 + (i * 37) % 180,
-      detail: status === 'pass'
-        ? 'All checks passed'
-        : 'Minor discrepancy detected — flagged for review',
-    };
-  });
-}
-
 export function VerificationPage() {
   const [selectedCheck, setSelectedCheck] = useState(0);
-  const checks = genChecks();
-  const check = checks[selectedCheck];
-  const overall = checks.reduce((a, c) => a + c.score, 0) / checks.length;
+  const sessions = useQuerySessions();
+
+  // Aggregate checks across all sessions
+  const aggregatedChecks = new Map<string, { total: number; passed: number; latencyMs: number; model: string }>();
+
+  sessions.forEach(s => {
+    s.verification.checks.forEach(c => {
+      const existing = aggregatedChecks.get(c.name) || { total: 0, passed: 0, latencyMs: 0, model: c.checker };
+      existing.total++;
+      if (c.status === 'pass') existing.passed++;
+      existing.latencyMs += c.latencyMs;
+      aggregatedChecks.set(c.name, existing);
+    });
+  });
+
+  // If no sessions, populate with default checks so the UI is not broken
+  if (aggregatedChecks.size === 0) {
+    Object.keys(CHECK_DESCS).forEach((name, i) => {
+      aggregatedChecks.set(name, {
+        total: 1,
+        passed: 1,
+        latencyMs: 90 + (i * 37) % 180,
+        model: JUDGE_MODELS[i % JUDGE_MODELS.length]
+      });
+    });
+  }
+
+  const checksArray = Array.from(aggregatedChecks.entries()).map(([name, data]) => {
+    const score = data.total > 0 ? data.passed / data.total : 0;
+    return {
+      name,
+      icon: CHECK_ICONS[name] || ShieldCheck,
+      desc: CHECK_DESCS[name] || 'Custom verification check',
+      score,
+      status: score > 0.95 ? 'pass' : score > 0.8 ? 'warn' : 'fail' as 'pass' | 'warn' | 'fail',
+      checker: data.model,
+      latencyMs: data.total > 0 ? Math.round(data.latencyMs / data.total) : 0,
+      detail: score > 0.95
+        ? 'All checks passing reliably'
+        : 'Occasional issues detected across recent queries',
+    };
+  });
+
+  const check = checksArray[selectedCheck] || checksArray[0];
+  const overall = sessions.length > 0 ? sessions.reduce((a, c) => a + c.verification.score, 0) / sessions.length : 1;
+  const passRate = sessions.length > 0 ? sessions.filter(s => s.verification.score > 0.9).length / sessions.length : 1;
+  const flagged = sessions.length > 0 ? sessions.filter(s => s.verification.score <= 0.9).length : 0;
+  const checksToday = sessions.reduce((acc, s) => acc + s.verification.checks.length, 0);
 
   return (
     <div className="mx-auto max-w-7xl px-6 py-8">
       {/* Top metrics */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <MetricCard label="Pass Rate" value="97.2%" sub="Last 7 days" trend={{ value: '+0.8%', positive: true }} />
-        <MetricCard label="Avg Score" value={pct(overall)} sub="Across 8 checks" />
-        <MetricCard label="Checks Today" value="14,820" sub="Across all queries" trend={{ value: '+12%', positive: true }} />
-        <MetricCard label="Flagged" value="418" sub="Requires review" trend={{ value: '-3.2%', positive: true }} />
+        <MetricCard label="Pass Rate" value={pct(passRate)} sub="All time" trend={{ value: 'Live', positive: true }} />
+        <MetricCard label="Avg Score" value={pct(overall)} sub={`Across ${checksArray.length} checks`} trend={{ value: 'Live', positive: true }} />
+        <MetricCard label="Checks Run" value={checksToday.toLocaleString()} sub="Across all queries" trend={{ value: 'Live', positive: true }} />
+        <MetricCard label="Flagged" value={flagged.toLocaleString()} sub="Requires review" trend={{ value: 'Live', positive: true }} />
       </div>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-3">
@@ -70,7 +109,7 @@ export function VerificationPage() {
             <h3 className="text-sm font-semibold text-ink-950">Verification Pipeline</h3>
           </div>
           <div className="space-y-1">
-            {checks.map((c, i) => {
+            {checksArray.map((c, i) => {
               const Icon = c.icon;
               const active = i === selectedCheck;
               return (
@@ -103,54 +142,56 @@ export function VerificationPage() {
 
         {/* Check detail */}
         <div className="lg:col-span-2 space-y-4">
-          <div className="card p-5">
-            <div className="flex items-start justify-between">
-              <div className="flex items-center gap-3">
-                <div className={cn(
-                  'flex h-10 w-10 items-center justify-center rounded-xl',
-                  check.status === 'pass' ? 'bg-emerald-50 text-emerald-600' : check.status === 'warn' ? 'bg-amber-50 text-amber-600' : 'bg-red-50 text-red-600',
-                )}>
-                  <check.icon size={20} />
+          {check && (
+            <div className="card p-5">
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-3">
+                  <div className={cn(
+                    'flex h-10 w-10 items-center justify-center rounded-xl',
+                    check.status === 'pass' ? 'bg-emerald-50 text-emerald-600' : check.status === 'warn' ? 'bg-amber-50 text-amber-600' : 'bg-red-50 text-red-600',
+                  )}>
+                    <check.icon size={20} />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold text-ink-950">{check.name}</h3>
+                    <p className="text-2xs text-ink-500">{check.desc}</p>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="text-sm font-semibold text-ink-950">{check.name}</h3>
-                  <p className="text-2xs text-ink-500">{check.desc}</p>
+                <Badge variant={check.status === 'pass' ? 'ok' : check.status === 'warn' ? 'warn' : 'err'}>
+                  {check.status === 'pass' ? 'Passed' : check.status === 'warn' ? 'Warning' : 'Failed'}
+                </Badge>
+              </div>
+
+              <div className="mt-5 grid gap-4 sm:grid-cols-3">
+                <div className="rounded-lg border border-line p-4 text-center">
+                  <ScoreRing value={check.score} size={56} label="score" />
+                  <div className="mt-2 label">Check Score</div>
+                </div>
+                <div className="rounded-lg border border-line p-4">
+                  <div className="label">Checker Model</div>
+                  <div className="mt-1.5 text-sm font-semibold text-ink-900">{MODELS[check.checker as keyof typeof MODELS]?.name || check.checker}</div>
+                  <div className="text-2xs text-ink-500">{MODELS[check.checker as keyof typeof MODELS]?.vendor || 'Unknown'}</div>
+                </div>
+                <div className="rounded-lg border border-line p-4">
+                  <div className="label">Latency</div>
+                  <div className="mt-1.5 text-sm font-semibold text-ink-900">{check.latencyMs}ms</div>
+                  <div className="text-2xs text-ink-500">Per query avg</div>
                 </div>
               </div>
-              <Badge variant={check.status === 'pass' ? 'ok' : check.status === 'warn' ? 'warn' : 'err'}>
-                {check.status === 'pass' ? 'Passed' : check.status === 'warn' ? 'Warning' : 'Failed'}
-              </Badge>
-            </div>
 
-            <div className="mt-5 grid gap-4 sm:grid-cols-3">
-              <div className="rounded-lg border border-line p-4 text-center">
-                <ScoreRing value={check.score} size={56} label="score" />
-                <div className="mt-2 label">Check Score</div>
-              </div>
-              <div className="rounded-lg border border-line p-4">
-                <div className="label">Checker Model</div>
-                <div className="mt-1.5 text-sm font-semibold text-ink-900">{MODELS[check.checker].name}</div>
-                <div className="text-2xs text-ink-500">{MODELS[check.checker].vendor}</div>
-              </div>
-              <div className="rounded-lg border border-line p-4">
-                <div className="label">Latency</div>
-                <div className="mt-1.5 text-sm font-semibold text-ink-900">{check.latencyMs}ms</div>
-                <div className="text-2xs text-ink-500">Per query avg</div>
+              <div className="mt-5 rounded-lg border border-line bg-ink-50/50 p-4">
+                <div className="label">Detail</div>
+                <p className="mt-1 text-xs text-ink-700">{check.detail}</p>
               </div>
             </div>
-
-            <div className="mt-5 rounded-lg border border-line bg-ink-50/50 p-4">
-              <div className="label">Detail</div>
-              <p className="mt-1 text-xs text-ink-700">{check.detail}</p>
-            </div>
-          </div>
+          )}
 
           {/* Overall pipeline score */}
           <div className="card p-5">
             <h3 className="text-sm font-semibold text-ink-950">Pipeline Score Distribution</h3>
-            <p className="text-2xs text-ink-500">Last 1,000 verified queries</p>
+            <p className="text-2xs text-ink-500">All recent verified queries</p>
             <div className="mt-4 space-y-2.5">
-              {checks.map((c) => (
+              {checksArray.map((c) => (
                 <div key={c.name} className="flex items-center gap-3">
                   <span className="w-36 shrink-0 text-xs text-ink-700">{c.name}</span>
                   <Bar value={c.score} className="flex-1" color={c.status === 'pass' ? 'ok' : 'warn'} />
@@ -169,6 +210,7 @@ export function VerificationPage() {
             <div className="grid gap-3 sm:grid-cols-3">
               {JUDGE_MODELS.map((id) => {
                 const m = MODELS[id];
+                if (!m) return null;
                 return (
                   <div key={id} className="rounded-lg border border-line p-3">
                     <div className="flex items-center gap-2">

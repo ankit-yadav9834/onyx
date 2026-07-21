@@ -53,14 +53,7 @@ const STAGE_ICONS: Record<PipelineStage, LucideIcon> = {
   synthesis: Sparkles,
 };
 
-interface Message {
-  id: string;
-  role: 'user' | 'assistant';
-  content: string;
-  status?: string;
-  isGenerating?: boolean;
-  result?: OrchestratedQuery | null;
-}
+import type { Message } from '@/lib/storage/models';
 
 const FOLLOW_UPS = [
   "Compare with competitors",
@@ -71,13 +64,22 @@ const FOLLOW_UPS = [
   "Continue research",
 ];
 
+import { useStorage } from '@/lib/storage';
+
 export function WorkspacePage({
   isTransparencyOpen,
-  onCloseTransparency
+  onCloseTransparency,
+  activeConversationId,
+  onConversationChange
 }: {
   isTransparencyOpen?: boolean;
-  onCloseTransparency?: () => void
+  onCloseTransparency?: () => void;
+  activeConversationId?: string | null;
+  onConversationChange?: (id: string | null) => void;
 }) {
+  const { conversations, querySessions, auditLogs, settings } = useStorage();
+  
+  // Load conversation if activeConversationId is provided
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [running, setRunning] = useState(false);
@@ -85,6 +87,15 @@ export function WorkspacePage({
 
   const endOfMessagesRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (activeConversationId) {
+      const conv = conversations.get(activeConversationId);
+      if (conv) setMessages(conv.messages);
+    } else {
+      setMessages([]);
+    }
+  }, [activeConversationId, conversations]);
 
   useEffect(() => {
     endOfMessagesRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -108,18 +119,23 @@ export function WorkspacePage({
     if (!text.trim() || running) return;
 
     const queryId = Date.now().toString();
-    setMessages(prev => [...prev, { id: `u-${queryId}`, role: 'user', content: text }]);
-    setInput('');
-    setRunning(true);
-
-    // Add assistant placeholder
-    setMessages(prev => [...prev, {
+    const userMsg: Message = { id: `u-${queryId}`, role: 'user', content: text, createdAt: Date.now() };
+    const assistantMsgPlaceholder: Message = {
       id: `a-${queryId}`,
       role: 'assistant',
       content: '',
       status: getGenerationStatus(0),
-      isGenerating: true
-    }]);
+      isGenerating: true,
+      createdAt: Date.now() + 1
+    };
+
+    setMessages(prev => {
+      const updated = [...prev, userMsg, assistantMsgPlaceholder];
+      return updated;
+    });
+    
+    setInput('');
+    setRunning(true);
 
     let stage = 0;
     const interval = setInterval(() => {
@@ -130,22 +146,86 @@ export function WorkspacePage({
 
       if (stage >= STAGE_ORDER.length) {
         clearInterval(interval);
-        const full = runFullPipeline(text);
+        
+        // Now call the async pipeline
+        const currentSettings = settings.get();
+        runFullPipeline(text, currentSettings.model).then(({ orchestrated, session, auditLog }) => {
+          
+          querySessions.save(session);
+          auditLogs.save(auditLog);
+          
+          let updatedMessages: Message[] = [];
+          setMessages(prev => {
+            updatedMessages = prev.map(m => 
+              m.id === `a-${queryId}` ? { 
+                ...m, 
+                status: undefined, 
+                isGenerating: false, 
+                content: orchestrated.finalAnswer || '', 
+                result: orchestrated 
+              } : m
+            );
+            return updatedMessages;
+          });
+          
+          // Persist conversation
+          const convId = activeConversationId || `c-${queryId}`;
+          const existing = conversations.get(convId);
+          conversations.save({
+            id: convId,
+            title: existing?.title || text.slice(0, 30) + '...',
+            createdAt: existing?.createdAt || Date.now(),
+            updatedAt: Date.now(),
+            pinned: existing?.pinned || false,
+            archived: existing?.archived || false,
+            tags: existing?.tags || [],
+            messages: updatedMessages,
+            lastMessage: orchestrated.finalAnswer?.slice(0, 50) + '...',
+          });
+          
+          if (!activeConversationId && onConversationChange) {
+            onConversationChange(convId);
+          }
+          
+          setRunning(false);
+          setExpandedStage('synthesis');
+        }).catch((err) => {
+          let updatedMessages: Message[] = [];
+          setMessages(prev => {
+            updatedMessages = prev.map(m => 
+              m.id === `a-${queryId}` ? { 
+                ...m, 
+                status: undefined, 
+                isGenerating: false, 
+                content: `**Error:** Failed to connect to the OrchestrAI backend.\n\n\`${err.message}\``, 
+              } : m
+            );
+            return updatedMessages;
+          });
+          
+          // Persist conversation even on error
+          const convId = activeConversationId || `c-${queryId}`;
+          const existing = conversations.get(convId);
+          conversations.save({
+            id: convId,
+            title: existing?.title || text.slice(0, 30) + '...',
+            createdAt: existing?.createdAt || Date.now(),
+            updatedAt: Date.now(),
+            pinned: existing?.pinned || false,
+            archived: existing?.archived || false,
+            tags: existing?.tags || [],
+            messages: updatedMessages,
+          });
 
-        setMessages(prev => prev.map(m =>
-          m.id === `a-${queryId}` ? {
-            ...m,
-            status: undefined,
-            isGenerating: false,
-            content: full.finalAnswer || '',
-            result: full
-          } : m
-        ));
-        setRunning(false);
-        setExpandedStage('synthesis');
+          if (!activeConversationId && onConversationChange) {
+            onConversationChange(convId);
+          }
+
+          setRunning(false);
+        });
       }
     }, 350);
-  }, [running]);
+  }, [running, activeConversationId, conversations, querySessions, auditLogs, settings, onConversationChange]);
 
   const latestResult = messages.slice().reverse().find(m => m.role === 'assistant' && m.result)?.result;
 

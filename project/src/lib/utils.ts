@@ -29,3 +29,9 @@ export function clamp(n: number, min: number, max: number): number {
 export function pct(n: number, digits = 1): string {
   return `${(n * 100).toFixed(digits)}%`;
 }
+
+export function hashStr(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return Math.abs(h);
+}

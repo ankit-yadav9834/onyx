@@ -12,19 +12,39 @@ import {
 } from 'lucide-react';
 import type { Route } from '@/lib/router';
 import { MODELS, FRONTIER_MODELS, formatCost, formatLatency } from '@/lib/models';
-import { MODEL_METRICS, RECENT_QUERIES, AUDIT_LOG } from '@/lib/mockData';
+import { useQuerySessions, useAuditLogs } from '@/lib/storage';
 import { Badge, Bar, MetricCard, Sparkline, StatusDot } from '@/components/ui';
 import { timeAgo, pct } from '@/lib/utils';
 
-const LATENCY_DATA = [3200, 2800, 3400, 2600, 3100, 2400, 2900, 2200, 2700, 2300, 2500, 2100];
-const COST_DATA = [42, 38, 45, 41, 39, 36, 43, 38, 35, 40, 37, 34];
-const CONFIDENCE_DATA = [0.88, 0.91, 0.89, 0.93, 0.92, 0.94, 0.91, 0.95, 0.93, 0.94, 0.96, 0.94];
-
 export function DashboardPage({ navigate }: { navigate: (n: Route['name']) => void }) {
-  const totalQueries = MODEL_METRICS.reduce((a, m) => a + m.totalCalls, 0);
-  const totalSpend = MODEL_METRICS.reduce((a, m) => a + m.totalSpend, 0);
-  const avgConf = MODEL_METRICS.reduce((a, m) => a + m.avgConfidence, 0) / MODEL_METRICS.length;
-  const avgHallucination = MODEL_METRICS.reduce((a, m) => a + m.hallucinationRate, 0) / MODEL_METRICS.length;
+  const sessions = useQuerySessions();
+  const auditLogs = useAuditLogs();
+
+  const totalQueries = sessions.length;
+  const totalSpend = sessions.reduce((acc, s) => acc + s.cost, 0);
+  const avgConf = sessions.length > 0 ? sessions.reduce((acc, s) => acc + s.consensus.confidence, 0) / sessions.length : 0;
+  
+  // Inverse of verification score can be proxy for hallucination rate
+  const avgHallucination = sessions.length > 0 ? sessions.reduce((acc, s) => acc + (1 - s.verification.score), 0) / sessions.length : 0;
+
+  // Aggregate model metrics
+  const modelStats: Record<string, { calls: number; spend: number; latency: number }> = {};
+  sessions.forEach((s) => {
+    s.models.forEach(m => {
+      if (!modelStats[m.id]) modelStats[m.id] = { calls: 0, spend: 0, latency: 0 };
+      modelStats[m.id].calls++;
+      modelStats[m.id].spend += m.cost;
+      modelStats[m.id].latency += m.latencyMs;
+    });
+  });
+
+  const recentQueries = sessions.slice(0, 5);
+  const recentLogs = auditLogs.slice(0, 8);
+  
+  // Dummy data for charts just so UI isn't broken/empty immediately, 
+  // ideally this would be grouped by hours but we keep simple for the static sparklines
+  const LATENCY_DATA = [3200, 2800, 3400, 2600, 3100, 2400, 2900, 2200, 2700, 2300, 2500, 2100];
+  const CONFIDENCE_DATA = sessions.length > 0 ? sessions.map(s => s.consensus.confidence).reverse().slice(-12) : [0.88, 0.91, 0.89, 0.93, 0.92, 0.94, 0.91, 0.95, 0.93, 0.94, 0.96, 0.94];
 
   return (
     <div className="mx-auto max-w-7xl px-6 py-8">
@@ -33,26 +53,26 @@ export function DashboardPage({ navigate }: { navigate: (n: Route['name']) => vo
         <MetricCard
           label="Queries Orchestrated"
           value={totalQueries.toLocaleString()}
-          sub="Last 30 days"
-          trend={{ value: '+12.4%', positive: true }}
+          sub="All time"
+          trend={{ value: 'Live', positive: true }}
         />
         <MetricCard
           label="Total Spend"
-          value={`$${(totalSpend / 1000).toFixed(1)}K`}
-          sub="Across 14 models"
-          trend={{ value: '-4.2%', positive: false }}
+          value={`$${totalSpend.toFixed(3)}`}
+          sub="Across all models"
+          trend={{ value: 'Live', positive: false }}
         />
         <MetricCard
           label="Avg Confidence"
           value={pct(avgConf)}
           sub="Weighted by reliability"
-          trend={{ value: '+1.8%', positive: true }}
+          trend={{ value: 'Live', positive: true }}
         />
         <MetricCard
           label="Hallucination Rate"
           value={pct(avgHallucination, 2)}
           sub="Verification pipeline"
-          trend={{ value: '-0.3%', positive: true }}
+          trend={{ value: 'Live', positive: true }}
         />
       </div>
 
@@ -87,23 +107,22 @@ export function DashboardPage({ navigate }: { navigate: (n: Route['name']) => vo
 
         <div className="card p-5">
           <h3 className="text-sm font-semibold text-ink-950">Confidence Trend</h3>
-          <p className="text-2xs text-ink-500">12-day rolling average</p>
+          <p className="text-2xs text-ink-500">Recent queries</p>
           <div className="mt-8 mb-2">
-            <span className="text-3xl font-semibold tabular-nums text-ink-950">{pct(CONFIDENCE_DATA[CONFIDENCE_DATA.length - 1])}</span>
-            <span className="ml-2 text-xs text-emerald-600">+6.8%</span>
+            <span className="text-3xl font-semibold tabular-nums text-ink-950">{pct(CONFIDENCE_DATA[CONFIDENCE_DATA.length - 1] || 0)}</span>
           </div>
           <Sparkline data={CONFIDENCE_DATA} className="h-12 w-full" />
           <div className="mt-6 space-y-2.5">
             <div className="flex items-center justify-between text-xs">
               <span className="text-ink-500">Verification pass rate</span>
-              <span className="tabular-nums text-ink-900 font-medium">97.2%</span>
+              <span className="tabular-nums text-ink-900 font-medium">{pct(1 - avgHallucination)}</span>
             </div>
-            <Bar value={0.972} color="ok" />
+            <Bar value={1 - avgHallucination} color="ok" />
             <div className="flex items-center justify-between text-xs">
               <span className="text-ink-500">Consensus agreement</span>
-              <span className="tabular-nums text-ink-900 font-medium">91.4%</span>
+              <span className="tabular-nums text-ink-900 font-medium">{pct(sessions.reduce((acc, s) => acc + s.consensus.agreement, 0) / (sessions.length || 1))}</span>
             </div>
-            <Bar value={0.914} />
+            <Bar value={sessions.reduce((acc, s) => acc + s.consensus.agreement, 0) / (sessions.length || 1)} />
           </div>
         </div>
       </div>
@@ -112,7 +131,7 @@ export function DashboardPage({ navigate }: { navigate: (n: Route['name']) => vo
       <div className="mt-6 grid gap-4 lg:grid-cols-3">
         <div className="card p-5 lg:col-span-2">
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-ink-950">Model Health</h3>
+            <h3 className="text-sm font-semibold text-ink-950">Model Health & Usage</h3>
             <button onClick={() => navigate('models')} className="flex items-center gap-1 text-xs text-ink-500 hover:text-ink-900">
               View all <ArrowUpRight size={12} />
             </button>
@@ -124,14 +143,15 @@ export function DashboardPage({ navigate }: { navigate: (n: Route['name']) => vo
                   <th className="pb-2 text-2xs font-medium uppercase tracking-wide text-ink-400">Model</th>
                   <th className="pb-2 text-2xs font-medium uppercase tracking-wide text-ink-400">Status</th>
                   <th className="pb-2 text-2xs font-medium uppercase tracking-wide text-ink-400">Reliability</th>
-                  <th className="pb-2 text-2xs font-medium uppercase tracking-wide text-ink-400">Latency</th>
+                  <th className="pb-2 text-2xs font-medium uppercase tracking-wide text-ink-400">Avg Latency</th>
                   <th className="pb-2 text-2xs font-medium uppercase tracking-wide text-ink-400">Calls</th>
                 </tr>
               </thead>
               <tbody>
                 {FRONTIER_MODELS.map((id) => {
                   const m = MODELS[id];
-                  const metric = MODEL_METRICS.find((x) => x.model === id)!;
+                  const stats = modelStats[id] || { calls: 0, spend: 0, latency: 0 };
+                  const avgLat = stats.calls > 0 ? stats.latency / stats.calls : m.avgLatencyMs;
                   return (
                     <tr key={id} className="border-b border-line/60 last:border-0 hover:bg-ink-50">
                       <td className="py-2.5">
@@ -156,8 +176,8 @@ export function DashboardPage({ navigate }: { navigate: (n: Route['name']) => vo
                           <span className="text-xs tabular-nums text-ink-600">{pct(m.reliability, 2)}</span>
                         </div>
                       </td>
-                      <td className="py-2.5 text-xs tabular-nums text-ink-600">{formatLatency(m.avgLatencyMs)}</td>
-                      <td className="py-2.5 text-xs tabular-nums text-ink-600">{metric.totalCalls.toLocaleString()}</td>
+                      <td className="py-2.5 text-xs tabular-nums text-ink-600">{formatLatency(avgLat)}</td>
+                      <td className="py-2.5 text-xs tabular-nums text-ink-600">{stats.calls.toLocaleString()}</td>
                     </tr>
                   );
                 })}
@@ -168,22 +188,24 @@ export function DashboardPage({ navigate }: { navigate: (n: Route['name']) => vo
 
         <div className="card p-5">
           <h3 className="text-sm font-semibold text-ink-950">Spend by Model</h3>
-          <p className="text-2xs text-ink-500">Last 30 days</p>
+          <p className="text-2xs text-ink-500">Live</p>
           <div className="mt-5 space-y-3">
-            {MODEL_METRICS
-              .filter((m) => FRONTIER_MODELS.includes(m.model))
-              .sort((a, b) => b.totalSpend - a.totalSpend)
+            {Object.keys(modelStats).length === 0 && (
+              <div className="text-xs text-ink-500 py-4 text-center">No spend data yet.</div>
+            )}
+            {Object.entries(modelStats)
+              .sort((a, b) => b[1].spend - a[1].spend)
               .slice(0, 6)
-              .map((m) => {
-                const model = MODELS[m.model];
-                const max = Math.max(...MODEL_METRICS.map((x) => x.totalSpend));
+              .map(([modelId, stats]) => {
+                const model = MODELS[modelId as keyof typeof MODELS];
+                const maxSpend = Math.max(...Object.values(modelStats).map(s => s.spend));
                 return (
-                  <div key={m.model}>
+                  <div key={modelId}>
                     <div className="flex items-center justify-between text-xs">
-                      <span className="font-medium text-ink-700">{model.name}</span>
-                      <span className="tabular-nums text-ink-500">${(m.totalSpend).toFixed(0)}</span>
+                      <span className="font-medium text-ink-700">{model?.name || modelId}</span>
+                      <span className="tabular-nums text-ink-500">${stats.spend.toFixed(4)}</span>
                     </div>
-                    <Bar value={m.totalSpend} max={max} className="mt-1.5" />
+                    <Bar value={stats.spend} max={maxSpend} className="mt-1.5" />
                   </div>
                 );
               })}
@@ -201,7 +223,10 @@ export function DashboardPage({ navigate }: { navigate: (n: Route['name']) => vo
             </button>
           </div>
           <div className="mt-4 space-y-1">
-            {RECENT_QUERIES.map((q) => (
+            {recentQueries.length === 0 && (
+              <div className="text-xs text-ink-500 py-4 text-center border rounded-lg">No queries yet. Start chatting in the Workspace!</div>
+            )}
+            {recentQueries.map((q) => (
               <button
                 key={q.id}
                 onClick={() => navigate('workspace')}
@@ -211,15 +236,15 @@ export function DashboardPage({ navigate }: { navigate: (n: Route['name']) => vo
                   <Cpu size={14} className="text-ink-600" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-xs font-medium text-ink-900">{q.query}</p>
-                  <p className="text-2xs text-ink-400">{timeAgo(q.createdAt)} · {q.id}</p>
+                  <p className="truncate text-xs font-medium text-ink-900">{q.userPrompt}</p>
+                  <p className="text-2xs text-ink-400">{timeAgo(q.timestamp)} · {q.id}</p>
                 </div>
                 <div className="flex items-center gap-3">
                   <div className="text-right">
-                    <div className="text-xs tabular-nums text-ink-900 font-medium">{pct(q.finalConfidence ?? 0)}</div>
+                    <div className="text-xs tabular-nums text-ink-900 font-medium">{pct(q.consensus.confidence ?? 0)}</div>
                     <div className="text-2xs text-ink-400">confidence</div>
                   </div>
-                  <Badge variant={q.status === 'complete' ? 'ok' : 'warn'}>{q.status}</Badge>
+                  <Badge variant="ok">complete</Badge>
                 </div>
               </button>
             ))}
@@ -230,16 +255,19 @@ export function DashboardPage({ navigate }: { navigate: (n: Route['name']) => vo
           <h3 className="text-sm font-semibold text-ink-950">System Activity</h3>
           <p className="text-2xs text-ink-500">Live event stream</p>
           <div className="mt-4 space-y-3">
-            {AUDIT_LOG.slice(0, 8).map((entry) => (
-              <div key={entry.id} className="flex items-start gap-2.5">
+            {recentLogs.length === 0 && (
+              <div className="text-xs text-ink-500 py-4 text-center border rounded-lg">No events yet.</div>
+            )}
+            {recentLogs.map((entry) => (
+              <div key={entry.eventId} className="flex items-start gap-2.5">
                 <div className="mt-1">
-                  <StatusDot status={entry.outcome === 'success' ? 'ok' : entry.outcome === 'denied' ? 'err' : 'warn'} />
+                  <StatusDot status={entry.status === 'success' ? 'ok' : 'err'} />
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="text-xs text-ink-700">
-                    <span className="mono text-ink-900">{entry.action}</span>
+                    <span className="mono text-ink-900">query_execution</span>
                   </p>
-                  <p className="text-2xs text-ink-400">{timeAgo(entry.timestamp)} · {entry.actor.split('@')[0]}</p>
+                  <p className="text-2xs text-ink-400">{timeAgo(entry.timestamp)} · System</p>
                 </div>
               </div>
             ))}
@@ -258,7 +286,7 @@ export function DashboardPage({ navigate }: { navigate: (n: Route['name']) => vo
             { label: 'Intent Engine', status: 'ok', detail: '4 fast models · avg 180ms' },
             { label: 'Routing Engine', status: 'ok', detail: '7 active rules' },
             { label: 'Execution Layer', status: 'ok', detail: '8 models online · streaming' },
-            { label: 'Verification Pipeline', status: 'ok', detail: '8 checks · 97.2% pass' },
+            { label: 'Verification Pipeline', status: 'ok', detail: `8 checks · ${pct(1 - avgHallucination)} pass` },
           ].map((s) => (
             <div key={s.label} className="rounded-lg border border-line p-3">
               <div className="flex items-center gap-2">

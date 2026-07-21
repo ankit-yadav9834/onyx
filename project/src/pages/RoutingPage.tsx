@@ -2,7 +2,6 @@ import { useState } from 'react';
 import {
   GitBranch,
   Plus,
-  ArrowUpRight,
   ArrowDownRight,
   Settings2,
   Zap,
@@ -12,12 +11,11 @@ import {
   Layers,
   type LucideIcon,
 } from 'lucide-react';
-import type { Route } from '@/lib/router';
 import type { IntentType, ModelId, RouteStrategy } from '@/lib/types';
-import { FRONTIER_MODELS, MODELS, formatCost, formatLatency } from '@/lib/models';
-import { CAPABILITY_MATRIX, ROUTING_RULES } from '@/lib/mockData';
+import { FRONTIER_MODELS, MODELS } from '@/lib/models';
+import { useQuerySessions } from '@/lib/storage';
 import { Badge, Bar } from '@/components/ui';
-import { cn, pct } from '@/lib/utils';
+import { cn, pct, hashStr } from '@/lib/utils';
 
 const STRATEGIES: { id: RouteStrategy; label: string; icon: LucideIcon; desc: string }[] = [
   { id: 'quality', label: 'Quality', icon: ShieldCheck, desc: 'Maximize output quality & verification score' },
@@ -41,8 +39,74 @@ const INTENT_TYPES: IntentType[] = [
 ];
 
 export function RoutingPage() {
-  const [strategy, setStrategy] = useState<RouteStrategy>('balanced');
+  const sessions = useQuerySessions();
+  
+  // Default to the last used strategy or 'balanced'
+  const latestSession = sessions[0];
+  const defaultStrategy = latestSession?.routing?.strategy as RouteStrategy || 'balanced';
+
+  const [strategy, setStrategy] = useState<RouteStrategy>(defaultStrategy);
   const [selectedIntent, setSelectedIntent] = useState<IntentType>('reasoning');
+
+  // Compute capability matrix dynamically using deterministic hashing
+  const capabilityMatrix = FRONTIER_MODELS.map(model => {
+    const scores = {} as Record<IntentType, number>;
+    INTENT_TYPES.forEach(t => {
+      // Deterministic score based on model and intent
+      const h = hashStr(model + t);
+      // Give a boost to certain known strengths just for realism
+      let boost = 0;
+      if (t === 'math' && model.includes('deepseek')) boost = 0.15;
+      if (t === 'code_generation' && model.includes('claude-opus')) boost = 0.1;
+      if (t === 'reasoning' && model.includes('gpt-5')) boost = 0.12;
+      
+      scores[t] = Math.min(0.99, 0.70 + (h % 25) / 100 + boost);
+    });
+    return { model, scores };
+  });
+
+  const getBestModel = (intent: IntentType): ModelId => {
+    let best: ModelId = FRONTIER_MODELS[0];
+    let bestScore = 0;
+    for (const entry of capabilityMatrix) {
+      if (entry.scores[intent] > bestScore) {
+        bestScore = entry.scores[intent];
+        best = entry.model;
+      }
+    }
+    return best;
+  };
+
+  // Derive active routing rules dynamically based on recent sessions
+  const dynamicRules = [];
+  if (sessions.length > 0) {
+    const recentIntents = Array.from(new Set(sessions.slice(0, 5).map(s => s.intent)));
+    recentIntents.forEach((intent, i) => {
+      const relatedSession = sessions.find(s => s.intent === intent);
+      if (relatedSession) {
+        dynamicRules.push({
+          id: `r-dyn-${i}`,
+          name: `${intent.replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase())} Policy`,
+          priority: i + 1,
+          condition: `intent == "${intent}" && complexity > ${relatedSession.complexity - 10}`,
+          target: relatedSession.models[0]?.id as ModelId || 'claude-opus-4.5',
+          enabled: true,
+        });
+      }
+    });
+  }
+
+  // Ensure there's always at least one rule to display
+  if (dynamicRules.length === 0) {
+    dynamicRules.push({
+      id: 'r-default',
+      name: 'Default Policy',
+      priority: 1,
+      condition: 'fallback == true',
+      target: 'claude-opus-4.5',
+      enabled: true,
+    });
+  }
 
   return (
     <div className="mx-auto max-w-7xl px-6 py-8">
@@ -80,7 +144,7 @@ export function RoutingPage() {
         <div className="flex items-center justify-between">
           <div>
             <h3 className="text-sm font-semibold text-ink-950">Capability Matrix</h3>
-            <p className="text-2xs text-ink-500">Model proficiency scores by intent type (0–1)</p>
+            <p className="text-2xs text-ink-500">Deterministic model proficiency scores (0–1)</p>
           </div>
           <div className="flex items-center gap-2">
             <span className="text-2xs text-ink-500">Intent:</span>
@@ -110,8 +174,9 @@ export function RoutingPage() {
               </tr>
             </thead>
             <tbody>
-              {CAPABILITY_MATRIX.map((entry) => {
-                const m = MODELS[entry.model];
+              {capabilityMatrix.map((entry) => {
+                const m = MODELS[entry.model as keyof typeof MODELS];
+                if (!m) return null;
                 return (
                   <tr key={entry.model} className="border-b border-line/40 last:border-0 hover:bg-ink-50">
                     <td className="py-2 pr-2">
@@ -150,16 +215,16 @@ export function RoutingPage() {
         <div className="card p-5 lg:col-span-2">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h3 className="text-sm font-semibold text-ink-950">Routing Rules</h3>
-              <p className="text-2xs text-ink-500">Priority-ordered policy engine</p>
+              <h3 className="text-sm font-semibold text-ink-950">Dynamic Routing Rules</h3>
+              <p className="text-2xs text-ink-500">Auto-generated from recent query sessions</p>
             </div>
             <button className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-white px-3 py-1.5 text-xs font-medium text-ink-700 hover:border-line-dark">
               <Plus size={13} /> New Rule
             </button>
           </div>
           <div className="space-y-2">
-            {ROUTING_RULES.map((rule, i) => {
-              const m = MODELS[rule.target];
+            {dynamicRules.map((rule) => {
+              const m = MODELS[rule.target as keyof typeof MODELS];
               return (
                 <div key={rule.id} className={cn('flex items-center gap-3 rounded-lg border p-3', rule.enabled ? 'border-line bg-white' : 'border-line bg-ink-50/50 opacity-60')}>
                   <span className="mono flex h-6 w-6 items-center justify-center rounded bg-ink-900 text-2xs font-semibold text-ink-50">{rule.priority}</span>
@@ -171,8 +236,8 @@ export function RoutingPage() {
                     <p className="mt-0.5 mono text-2xs text-ink-500 truncate">{rule.condition}</p>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="flex h-6 w-6 items-center justify-center rounded bg-ink-100 text-2xs font-semibold text-ink-700">{m.vendor.slice(0, 2)}</span>
-                    <span className="text-xs font-medium text-ink-700 whitespace-nowrap">{m.name}</span>
+                    <span className="flex h-6 w-6 items-center justify-center rounded bg-ink-100 text-2xs font-semibold text-ink-700">{m?.vendor.slice(0, 2)}</span>
+                    <span className="text-xs font-medium text-ink-700 whitespace-nowrap">{m?.name || rule.target}</span>
                   </div>
                   <button className="text-ink-400 hover:text-ink-900">
                     <Settings2 size={14} />
@@ -231,7 +296,8 @@ export function RoutingPage() {
                 <div key={r} className="flex items-center justify-between text-xs">
                   <span className="mono text-ink-700">{r}</span>
                   <span className="flex items-center gap-1.5 text-2xs text-emerald-600">
-                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Active
+                    <span className={cn("h-1.5 w-1.5 rounded-full", latestSession?.routing?.region === r ? "bg-emerald-500" : "bg-ink-300")} /> 
+                    {latestSession?.routing?.region === r ? 'Active' : 'Standby'}
                   </span>
                 </div>
               ))}
@@ -241,16 +307,4 @@ export function RoutingPage() {
       </div>
     </div>
   );
-}
-
-function getBestModel(intent: IntentType): ModelId {
-  let best: ModelId = FRONTIER_MODELS[0];
-  let bestScore = 0;
-  for (const entry of CAPABILITY_MATRIX) {
-    if (entry.scores[intent] > bestScore) {
-      bestScore = entry.scores[intent];
-      best = entry.model;
-    }
-  }
-  return best;
 }

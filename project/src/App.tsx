@@ -11,6 +11,7 @@ import { ModelsPage } from '@/pages/ModelsPage';
 import { AuditPage } from '@/pages/AuditPage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { AdminPage } from '@/pages/AdminPage';
+import { SearchPage } from '@/pages/SearchPage';
 
 function App() {
   const { route, navigate } = useRouter();
@@ -38,6 +39,7 @@ function App() {
           onConversationChange={setActiveConversationId}
         />
       )}
+      {route.name === 'search' && <SearchPage navigate={navigate} onSelectConversation={setActiveConversationId} />}
       {route.name === 'consensus' && <ConsensusPage />}
       {route.name === 'routing' && <RoutingPage />}
       {route.name === 'verification' && <VerificationPage />}

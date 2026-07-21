@@ -1,5 +1,4 @@
 import type {
-  AuditEntry,
   CapabilityMatrixEntry,
   IntentType,
   ModelMetric,
@@ -154,7 +153,7 @@ const ACTIONS = [
 const RESOURCES = ['orchestrator', 'routing-engine', 'model:gpt-5', 'model:claude-opus-4.5', 'audit-log', 'policy:pii', 'workspace', 'consensus-engine'];
 const IPS = ['10.0.4.12', '10.0.4.88', '172.16.2.4', '10.0.8.21', '10.0.4.12', '172.16.2.4'];
 
-export const AUDIT_LOG: AuditEntry[] = Array.from({ length: 48 }, (_, i) => {
+export const AUDIT_LOG: any[] = Array.from({ length: 48 }, (_, i) => {
   const user = USERS[i % USERS.length];
   const action = ACTIONS[i % ACTIONS.length];
   const resource = RESOURCES[i % RESOURCES.length];

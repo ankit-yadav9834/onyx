@@ -210,15 +210,54 @@ export interface ModelMetric {
   citationsPerQuery: number;
 }
 
-export interface AuditEntry {
+export interface AuditLog {
+  eventId: string;
+  traceId: string;
+  requestId: string;
+  queryId: string;
+  timestamp: number;
+  selectedModel: string;
+  latencyMs: number;
+  tokens: number;
+  cost: number;
+  status: 'success' | 'error';
+  promptPreview: string;
+  provider: string;
+}
+
+export interface QuerySession {
   id: string;
   timestamp: number;
-  actor: string;
-  action: string;
-  resource: string;
-  outcome: 'success' | 'denied' | 'error';
-  ip: string;
-  metadata?: string;
+  userPrompt: string;
+  finalAnswer: string;
+
+  intent: string;
+  complexity: number;
+  risk: string;
+  language: string;
+
+  planner: { model: string; latencyMs: number };
+  routing: { rulesMatched: number; fallbackTriggered: boolean; region: string; strategy: string };
+  models: { id: string; latencyMs: number; tokens: number; cost: number; provider: string }[];
+  verification: { checks: VerificationCheck[]; score: number; passed: boolean };
+  consensus: { votes: ModelVote[]; agreement: number; confidence: number };
+
+  latency: number;
+  cost: number;
+
+  citations: Citation[];
+  auditLogs: AuditLog[];
+
+  usage: {
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+  };
+
+  provider: string;
+  model: string;
+  finishReason: string;
+  traceId: string;
 }
 
 export interface User {

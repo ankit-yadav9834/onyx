@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { BarChart3, TrendingUp, DollarSign, Clock, Target, AlertTriangle, Cpu } from 'lucide-react';
+import { BarChart3, DollarSign, Clock, Target, AlertTriangle } from 'lucide-react';
 import { MODELS, FRONTIER_MODELS, FAST_MODELS, JUDGE_MODELS, formatCost, formatLatency } from '@/lib/models';
-import { MODEL_METRICS } from '@/lib/mockData';
+import { useQuerySessions } from '@/lib/storage';
 import { Badge, Bar, MetricCard, Sparkline } from '@/components/ui';
 import { cn, pct } from '@/lib/utils';
 
@@ -12,22 +12,61 @@ function genSparkline(seed: number): number[] {
 }
 
 export function ModelsPage() {
+  const sessions = useQuerySessions();
   const [tier, setTier] = useState<'all' | 'frontier' | 'fast' | 'judge'>('all');
   const filtered = tier === 'all' ? ALL_IDS : tier === 'frontier' ? FRONTIER_MODELS : tier === 'fast' ? FAST_MODELS : JUDGE_MODELS;
-  const metrics = MODEL_METRICS.filter((m) => filtered.includes(m.model));
 
-  const totalSpend = MODEL_METRICS.reduce((a, m) => a + m.totalSpend, 0);
-  const avgLatency = MODEL_METRICS.filter((m) => FRONTIER_MODELS.includes(m.model)).reduce((a, m) => a + m.avgLatencyMs, 0) / FRONTIER_MODELS.length;
-  const avgConfidence = MODEL_METRICS.reduce((a, m) => a + m.avgConfidence, 0) / MODEL_METRICS.length;
+  // Aggregate stats per model
+  const modelStats: Record<string, { calls: number; spend: number; latency: number; confidence: number; hallucination: number; success: number }> = {};
+  
+  // Initialize with empty so everything appears
+  ALL_IDS.forEach(id => {
+    modelStats[id] = { calls: 0, spend: 0, latency: 0, confidence: 0, hallucination: 0, success: 0 };
+  });
+
+  sessions.forEach(s => {
+    s.models.forEach(m => {
+      if (!modelStats[m.id]) return;
+      modelStats[m.id].calls++;
+      modelStats[m.id].spend += m.cost;
+      modelStats[m.id].latency += m.latencyMs;
+      modelStats[m.id].confidence += s.consensus.confidence; // using global consensus confidence
+      modelStats[m.id].hallucination += (1 - s.verification.score); // proxy for hallucination
+      modelStats[m.id].success++;
+    });
+  });
+
+  // Convert to array of metrics
+  const metrics = filtered.map(model => {
+    const stats = modelStats[model];
+    const calls = stats.calls || 1; // avoid div 0
+    return {
+      model,
+      totalCalls: stats.calls,
+      totalSpend: stats.spend,
+      avgLatencyMs: stats.calls > 0 ? stats.latency / calls : MODELS[model as keyof typeof MODELS].avgLatencyMs,
+      p99LatencyMs: stats.calls > 0 ? (stats.latency / calls) * 1.5 : MODELS[model as keyof typeof MODELS].avgLatencyMs * 1.5,
+      avgConfidence: stats.calls > 0 ? stats.confidence / calls : 0,
+      hallucinationRate: stats.calls > 0 ? stats.hallucination / calls : 0,
+      successRate: stats.calls > 0 ? stats.success / calls : 1,
+    };
+  });
+
+  const totalSpend = Object.values(modelStats).reduce((a, s) => a + s.spend, 0);
+  const frontierCalls = FRONTIER_MODELS.reduce((a, id) => a + modelStats[id].calls, 0) || 1;
+  const avgLatency = FRONTIER_MODELS.reduce((a, id) => a + modelStats[id].latency, 0) / frontierCalls;
+  
+  const totalCallsAll = Object.values(modelStats).reduce((a, s) => a + s.calls, 0) || 1;
+  const avgConfidence = Object.values(modelStats).reduce((a, s) => a + s.confidence, 0) / totalCallsAll;
 
   return (
     <div className="mx-auto max-w-7xl px-6 py-8">
       {/* Top metrics */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <MetricCard label="Total Models" value={ALL_IDS.length} sub="8 frontier · 4 fast · 2 judge" />
-        <MetricCard label="Total Spend" value={`$${(totalSpend / 1000).toFixed(1)}K`} sub="Last 30 days" trend={{ value: '-4.2%', positive: false }} />
-        <MetricCard label="Avg Latency" value={formatLatency(avgLatency)} sub="Frontier models" trend={{ value: '-8.1%', positive: true }} />
-        <MetricCard label="Avg Confidence" value={pct(avgConfidence)} sub="All models" trend={{ value: '+1.8%', positive: true }} />
+        <MetricCard label="Total Spend" value={`$${totalSpend.toFixed(3)}`} sub="All time" trend={{ value: 'Live', positive: false }} />
+        <MetricCard label="Avg Latency" value={formatLatency(avgLatency)} sub="Frontier models" trend={{ value: 'Live', positive: true }} />
+        <MetricCard label="Avg Confidence" value={pct(avgConfidence)} sub="All models" trend={{ value: 'Live', positive: true }} />
       </div>
 
       {/* Filter */}
@@ -50,7 +89,7 @@ export function ModelsPage() {
       {/* Model grid */}
       <div className="mt-4 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {metrics.map((metric, i) => {
-          const m = MODELS[metric.model];
+          const m = MODELS[metric.model as keyof typeof MODELS];
           return (
             <div key={metric.model} className="card card-hover p-5">
               <div className="flex items-start justify-between">
@@ -99,14 +138,14 @@ export function ModelsPage() {
                     <AlertTriangle size={11} /> Hallucination
                   </div>
                   <div className="mt-0.5 text-xs font-semibold tabular-nums text-ink-900">{pct(metric.hallucinationRate, 2)}</div>
-                  <Bar value={metric.hallucinationRate} max={0.05} className="mt-1" color="err" />
+                  <Bar value={metric.hallucinationRate} max={1.0} className="mt-1" color="err" />
                 </div>
               </div>
 
               <div className="mt-4 border-t border-line pt-3">
                 <div className="flex items-center justify-between text-2xs text-ink-500">
                   <span>{metric.totalCalls.toLocaleString()} calls</span>
-                  <span>${metric.totalSpend.toFixed(0)} spend</span>
+                  <span>${metric.totalSpend.toFixed(4)} spend</span>
                 </div>
                 <div className="mt-1 flex items-center justify-between text-2xs text-ink-500">
                   <span>{m.region}</span>
@@ -140,7 +179,7 @@ export function ModelsPage() {
             </thead>
             <tbody>
               {metrics.map((metric) => {
-                const m = MODELS[metric.model];
+                const m = MODELS[metric.model as keyof typeof MODELS];
                 return (
                   <tr key={metric.model} className="border-b border-line/40 last:border-0 hover:bg-ink-50">
                     <td className="py-2.5">

@@ -9,7 +9,7 @@ export interface Message {
   isGenerating?: boolean;
   result?: OrchestratedQuery | null;
   attachments?: string[];
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 export interface Conversation {
@@ -32,4 +32,11 @@ export interface Project {
   updatedAt: number;
   archived: boolean;
   favorite: boolean;
+}
+
+export interface Settings {
+  theme: 'light' | 'dark' | 'system';
+  language: string;
+  model: string;
+  notifications: boolean;
 }
