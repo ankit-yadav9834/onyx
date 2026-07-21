@@ -1,4 +1,4 @@
-import type { OrchestratedQuery } from '@/lib/types';
+// OrchestrAI — Storage domain models
 
 export interface Message {
   id: string;
@@ -7,7 +7,7 @@ export interface Message {
   createdAt: number;
   status?: string;
   isGenerating?: boolean;
-  result?: OrchestratedQuery | null;
+  querySessionId?: string;
   attachments?: string[];
   metadata?: Record<string, unknown>;
 }
@@ -32,6 +32,7 @@ export interface Project {
   updatedAt: number;
   archived: boolean;
   favorite: boolean;
+  conversationIds: string[];
 }
 
 export interface Settings {

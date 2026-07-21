@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { BarChart3, DollarSign, Clock, Target, AlertTriangle } from 'lucide-react';
 import { MODELS, FRONTIER_MODELS, FAST_MODELS, JUDGE_MODELS, formatCost, formatLatency } from '@/lib/models';
-import { useQuerySessions, useActiveState } from '@/lib/storage';
+import { useQuerySessions, useAppState } from '@/lib/storage';
 import { Badge, Bar, MetricCard, Sparkline } from '@/components/ui';
 import { cn, pct } from '@/lib/utils';
 
@@ -13,7 +13,7 @@ function genSparkline(seed: number): number[] {
 
 export function ModelsPage() {
   const sessions = useQuerySessions();
-  const { activeQuerySessionId } = useActiveState();
+  const { activeQuerySessionId } = useAppState();
   const [tier, setTier] = useState<'all' | 'frontier' | 'fast' | 'judge'>('all');
   const filtered = tier === 'all' ? ALL_IDS : tier === 'frontier' ? FRONTIER_MODELS : tier === 'fast' ? FAST_MODELS : JUDGE_MODELS;
 

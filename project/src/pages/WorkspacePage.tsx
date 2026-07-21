@@ -64,7 +64,7 @@ const FOLLOW_UPS = [
   "Continue research",
 ];
 
-import { useStorage, useActiveState } from '@/lib/storage';
+import { useAppState } from '@/lib/storage';
 
 export function WorkspacePage({
   isTransparencyOpen,
@@ -73,8 +73,7 @@ export function WorkspacePage({
   isTransparencyOpen?: boolean;
   onCloseTransparency?: () => void;
 }) {
-  const { conversations, querySessions, auditLogs, settings } = useStorage();
-  const { activeConversationId, setActiveConversationId, setActiveQuerySessionId } = useActiveState();
+  const { conversations, querySessions, auditLogs, settings, activeConversationId, setActiveConversationId, setActiveQuerySessionId } = useAppState();
   
   // Load conversation if activeConversationId is provided
   const [messages, setMessages] = useState<Message[]>([]);
@@ -126,6 +125,8 @@ export function WorkspacePage({
       createdAt: Date.now() + 1
     };
 
+    const conversationHistory = [...messages, userMsg];
+
     setMessages(prev => {
       const updated = [...prev, userMsg, assistantMsgPlaceholder];
       return updated;
@@ -146,7 +147,7 @@ export function WorkspacePage({
         
         // Now call the async pipeline
         const currentSettings = settings.get();
-        runFullPipeline(text, currentSettings.model).then(({ orchestrated, session, auditLog }) => {
+        runFullPipeline(conversationHistory, currentSettings.model).then(({ orchestrated, session, auditLog }) => {
           
           querySessions.save(session);
           auditLogs.save(auditLog);
@@ -160,7 +161,7 @@ export function WorkspacePage({
                 status: undefined, 
                 isGenerating: false, 
                 content: orchestrated.finalAnswer || '', 
-                result: orchestrated 
+                querySessionId: session.id 
               } : m
             );
             return updatedMessages;
@@ -225,7 +226,10 @@ export function WorkspacePage({
     }, 350);
   }, [running, activeConversationId, conversations, querySessions, auditLogs, settings, setActiveConversationId, setActiveQuerySessionId]);
 
-  const latestResult = messages.slice().reverse().find(m => m.role === 'assistant' && m.result)?.result;
+  const latestMsgWithSession = messages.slice().reverse().find(m => m.role === 'assistant' && m.querySessionId);
+  const latestResult = latestMsgWithSession?.querySessionId
+    ? querySessions.get(latestMsgWithSession.querySessionId)?.orchestrated
+    : null;
 
   return (
     <div className="relative flex h-[calc(100vh-3.5rem)] w-full overflow-hidden bg-white">

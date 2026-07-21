@@ -12,14 +12,14 @@ import {
 } from 'lucide-react';
 import type { Route } from '@/lib/router';
 import { MODELS, FRONTIER_MODELS, formatCost, formatLatency } from '@/lib/models';
-import { useQuerySessions, useAuditLogs, useActiveState } from '@/lib/storage';
+import { useQuerySessions, useAuditLogs, useAppState } from '@/lib/storage';
 import { Badge, Bar, MetricCard, Sparkline, StatusDot } from '@/components/ui';
 import { timeAgo, pct } from '@/lib/utils';
 
 export function DashboardPage({ navigate }: { navigate: (n: Route['name']) => void }) {
   const sessions = useQuerySessions();
   const auditLogs = useAuditLogs();
-  const { activeQuerySessionId } = useActiveState();
+  const { activeQuerySessionId } = useAppState();
 
   const totalQueries = sessions.length;
   const totalSpend = sessions.reduce((acc, s) => acc + s.cost, 0);
@@ -51,10 +51,15 @@ export function DashboardPage({ navigate }: { navigate: (n: Route['name']) => vo
   const recentQueries = [...sessions].reverse().slice(0, 5);
   const recentLogs = [...auditLogs].reverse().slice(0, 8);
   
-  // Dummy data for charts just so UI isn't broken/empty immediately, 
-  // ideally this would be grouped by hours but we keep simple for the static sparklines
-  const LATENCY_DATA = [3200, 2800, 3400, 2600, 3100, 2400, 2900, 2200, 2700, 2300, 2500, 2100];
-  const CONFIDENCE_DATA = sessions.length > 0 ? sessions.map(s => s.consensus.confidence).slice(-12) : [0.88, 0.91, 0.89, 0.93, 0.92, 0.94, 0.91, 0.95, 0.93, 0.94, 0.96, 0.94];
+  // Derive charts exclusively from real query sessions
+  const recent12Sessions = [...sessions].reverse().slice(0, 12).reverse();
+  const LATENCY_DATA = recent12Sessions.length > 0 
+    ? recent12Sessions.map(s => s.latency)
+    : [0];
+    
+  const CONFIDENCE_DATA = recent12Sessions.length > 0
+    ? recent12Sessions.map(s => s.consensus.confidence)
+    : [0];
 
   return (
     <div className="mx-auto max-w-7xl px-6 py-8">
@@ -98,7 +103,7 @@ export function DashboardPage({ navigate }: { navigate: (n: Route['name']) => vo
           </div>
           <div className="mt-6 flex items-end gap-2">
             {LATENCY_DATA.map((v, i) => {
-              const max = Math.max(...LATENCY_DATA);
+              const max = Math.max(...LATENCY_DATA, 1);
               const h = (v / max) * 100;
               return (
                 <div key={i} className="group flex flex-1 flex-col items-center gap-2">
@@ -108,7 +113,7 @@ export function DashboardPage({ navigate }: { navigate: (n: Route['name']) => vo
                       style={{ height: `${h * 1.2}px` }}
                     />
                   </div>
-                  <span className="text-2xs text-ink-400">{i + 1}h</span>
+                  <span className="text-2xs text-ink-400">Q{i + 1}</span>
                 </div>
               );
             })}

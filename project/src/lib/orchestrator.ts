@@ -22,19 +22,27 @@ import { FRONTIER_MODELS, MODELS } from './models';
 let counter = 0;
 const uid = (p: string) => `${p}-${(counter++).toString(36).padStart(4, '0')}`;
 
-function pick<T>(arr: T[], n: number): T[] {
-  const copy = [...arr];
-  const out: T[] = [];
-  for (let i = 0; i < n && copy.length; i++) {
-    out.push(copy.splice(Math.floor(Math.random() * copy.length), 1)[0]);
-  }
-  return out;
-}
-
 function hashStr(s: string): number {
   let h = 0;
   for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
   return Math.abs(h);
+}
+
+// Pseudo-random number generator based on hash
+function seededRandom(seed: number) {
+  const x = Math.sin(seed++) * 10000;
+  return x - Math.floor(x);
+}
+
+function pick<T>(arr: T[], n: number, seed: number): T[] {
+  const copy = [...arr];
+  const out: T[] = [];
+  let s = seed;
+  for (let i = 0; i < n && copy.length; i++) {
+    const r = seededRandom(s++);
+    out.push(copy.splice(Math.floor(r * copy.length), 1)[0]);
+  }
+  return out;
 }
 
 export function detectIntent(query: string): Intent {
@@ -101,24 +109,25 @@ export function planTasks(query: string, intent: Intent): TaskPlan {
 }
 
 function buildSubtaskDefs(intent: Intent) {
+  const h = hashStr(intent.type + intent.classification);
   const base = [
-    { description: 'Retrieve supporting evidence and citations', dependencies: [] as string[], cost: 0.02, latency: 1200, models: pick(FRONTIER_MODELS, 3) },
+    { description: 'Retrieve supporting evidence and citations', dependencies: [] as string[], cost: 0.02, latency: 1200, models: pick(FRONTIER_MODELS, 3, h) },
   ];
   if (intent.type === 'code_generation') {
-    base.push({ description: 'Generate primary implementation', dependencies: ['s1'], cost: 0.04, latency: 2200, models: pick(FRONTIER_MODELS, 3) });
-    base.push({ description: 'Generate alternative implementation for consensus', dependencies: ['s1'], cost: 0.04, latency: 2200, models: pick(FRONTIER_MODELS, 2) });
+    base.push({ description: 'Generate primary implementation', dependencies: ['s1'], cost: 0.04, latency: 2200, models: pick(FRONTIER_MODELS, 3, h + 1) });
+    base.push({ description: 'Generate alternative implementation for consensus', dependencies: ['s1'], cost: 0.04, latency: 2200, models: pick(FRONTIER_MODELS, 2, h + 2) });
     base.push({ description: 'Verify correctness and memory safety', dependencies: ['s2', 's3'], cost: 0.02, latency: 900, models: ['gpt-5-judge', 'claude-judge'] as ModelId[] });
   } else if (intent.type === 'math') {
     base.push({ description: 'Derive primary solution path', dependencies: ['s1'], cost: 0.05, latency: 2400, models: ['deepseek-r2', 'gpt-5', 'claude-opus-4.5'] });
     base.push({ description: 'Independent derivation for verification', dependencies: ['s1'], cost: 0.04, latency: 2400, models: ['claude-opus-4.5', 'gemini-2.5-pro'] });
     base.push({ description: 'Validate mathematical correctness', dependencies: ['s2', 's3'], cost: 0.02, latency: 800, models: ['gpt-5-judge', 'claude-judge'] });
   } else if (intent.type === 'reasoning' || intent.type === 'multi_step') {
-    base.push({ description: 'Analyze primary perspective', dependencies: ['s1'], cost: 0.04, latency: 2000, models: pick(FRONTIER_MODELS, 3) });
-    base.push({ description: 'Analyze counter-perspective', dependencies: ['s1'], cost: 0.04, latency: 2000, models: pick(FRONTIER_MODELS, 2) });
+    base.push({ description: 'Analyze primary perspective', dependencies: ['s1'], cost: 0.04, latency: 2000, models: pick(FRONTIER_MODELS, 3, h + 3) });
+    base.push({ description: 'Analyze counter-perspective', dependencies: ['s1'], cost: 0.04, latency: 2000, models: pick(FRONTIER_MODELS, 2, h + 4) });
     base.push({ description: 'Synthesize trade-offs and recommendations', dependencies: ['s2', 's3'], cost: 0.03, latency: 1600, models: ['claude-opus-4.5', 'gpt-5'] });
   } else {
-    base.push({ description: 'Generate primary response', dependencies: ['s1'], cost: 0.03, latency: 1600, models: pick(FRONTIER_MODELS, 3) });
-    base.push({ description: 'Generate independent response for consensus', dependencies: ['s1'], cost: 0.03, latency: 1600, models: pick(FRONTIER_MODELS, 2) });
+    base.push({ description: 'Generate primary response', dependencies: ['s1'], cost: 0.03, latency: 1600, models: pick(FRONTIER_MODELS, 3, h + 5) });
+    base.push({ description: 'Generate independent response for consensus', dependencies: ['s1'], cost: 0.03, latency: 1600, models: pick(FRONTIER_MODELS, 2, h + 6) });
     base.push({ description: 'Cross-verify factual claims', dependencies: ['s2', 's3'], cost: 0.02, latency: 800, models: ['gpt-5-judge', 'claude-judge'] });
   }
   return base;
@@ -187,7 +196,7 @@ function generateCitations(seed: string, h: number): Citation[] {
     { source: 'nature.com', url: 'https://nature.com/articles/s41586-026-orch', snippet: 'Consensus mechanisms in neural computation' },
   ];
   const n = 2 + (h % 3);
-  return pick(sources, n).map((s, i) => ({
+  return pick(sources, n, h).map((s, i) => ({
     id: `${seed}-c${i + 1}`,
     source: s.source,
     url: s.url,
@@ -259,7 +268,7 @@ export function buildConsensus(results: ExecutionResult[]): ConsensusReport[] {
     });
     // Simulate 2-3 other models voting on same subtask
     const others = FRONTIER_MODELS.filter((m) => m !== r.model);
-    for (const m of pick(others, 2 + (h % 2))) {
+    for (const m of pick(others, 2 + (h % 2), h)) {
       const agree = 0.75 + ((h + m.length) % 25) / 100;
       votes.push({
         model: m,
@@ -310,7 +319,13 @@ function generateSynthesizedContent(query: string, results: ExecutionResult[]): 
   return primary?.output ?? 'Synthesized response from multiple frontier models.';
 }
 
-export async function runFullPipeline(query: string, modelToUse: string = 'openrouter/google/gemini-2.5-flash'): Promise<{ orchestrated: OrchestratedQuery, session: QuerySession, auditLog: AuditLog }> {
+import type { Message } from '@/lib/storage/models';
+
+export async function runFullPipeline(messages: Message[], modelToUse: string = 'openrouter/google/gemini-2.5-flash'): Promise<{ orchestrated: OrchestratedQuery, session: QuerySession, auditLog: AuditLog }> {
+  // Use the latest user message for deterministic orchestration
+  const latestMessage = messages[messages.length - 1]?.content || '';
+  const query = latestMessage;
+
   const intent = detectIntent(query);
   const plan = planTasks(query, intent);
   const routes = routeTasks(plan, intent);
@@ -323,7 +338,7 @@ export async function runFullPipeline(query: string, modelToUse: string = 'openr
     const res = await fetch('/api/orchestrate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query, model: modelToUse })
+      body: JSON.stringify({ messages, model: modelToUse })
     });
     
     if (!res.ok) {
@@ -451,6 +466,8 @@ export async function runFullPipeline(query: string, modelToUse: string = 'openr
     totalLatencyMs: session.latency,
     status: 'complete',
   };
+
+  session.orchestrated = orchestrated;
 
   return { orchestrated, session, auditLog };
 }

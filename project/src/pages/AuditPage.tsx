@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import { ScrollText, Search, Download, Filter, ChevronRight, Cpu } from 'lucide-react';
-import { useAuditLogs, useActiveState } from '@/lib/storage';
+import { useAuditLogs, useAppState } from '@/lib/storage';
 import { Badge } from '@/components/ui';
 import { cn, formatDateTime, timeAgo } from '@/lib/utils';
 import { formatCost, formatLatency } from '@/lib/models';
 
 export function AuditPage() {
   const allLogs = useAuditLogs();
-  const { activeQuerySessionId } = useActiveState();
+  const { activeQuerySessionId } = useAppState();
   const [filter, setFilter] = useState<'all' | 'success' | 'error'>('all');
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<string | null>(null);

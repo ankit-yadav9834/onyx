@@ -12,7 +12,7 @@ import { AuditPage } from '@/pages/AuditPage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { AdminPage } from '@/pages/AdminPage';
 import { SearchPage } from '@/pages/SearchPage';
-import { ActiveStateProvider } from '@/lib/storage';
+import { AppStateProvider } from '@/lib/storage';
 
 function AppContent() {
   const { route, navigate } = useRouter();
@@ -49,8 +49,8 @@ function AppContent() {
 
 export default function App() {
   return (
-    <ActiveStateProvider>
+    <AppStateProvider>
       <AppContent />
-    </ActiveStateProvider>
+    </AppStateProvider>
   );
 }

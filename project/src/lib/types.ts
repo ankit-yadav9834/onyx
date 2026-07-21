@@ -258,6 +258,8 @@ export interface QuerySession {
   model: string;
   finishReason: string;
   traceId: string;
+  
+  orchestrated?: OrchestratedQuery;
 }
 
 export interface User {

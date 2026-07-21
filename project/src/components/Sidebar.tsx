@@ -23,7 +23,7 @@ import {
 import type { Route } from '@/lib/router';
 import { cn } from '@/lib/utils';
 import { Wordmark } from './Logo';
-import { useConversations, useProjects, type Conversation, type Project, useActiveState, useStorage } from '@/lib/storage';
+import { useConversations, useProjects, type Conversation, type Project, useAppState } from '@/lib/storage';
 
 const DEV_TOOLS_NAV: { id: Route['name']; label: string; icon: LucideIcon }[] = [
   { id: 'routing', label: 'AI Routing', icon: GitBranch },
@@ -74,10 +74,12 @@ export function Sidebar({
   
   const conversations = useConversations();
   const projects = useProjects();
-  const { activeConversationId, setActiveConversationId, startNewChat } = useActiveState();
-  const { conversations: convRepo } = useStorage();
+  const { activeConversationId, setActiveConversationId, startNewChat, conversations: convRepo, projects: projRepo } = useAppState();
   
   const conversationGroups = groupConversations(conversations);
+
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingValue, setEditingValue] = useState('');
 
   const handleNewChat = () => {
     navigate('workspace');
@@ -96,6 +98,29 @@ export function Sidebar({
       startNewChat();
       navigate('workspace');
     }
+  };
+
+  const startEditing = (id: string, initialValue: string) => {
+    setEditingId(id);
+    setEditingValue(initialValue);
+  };
+
+  const handleRenameConversation = (id: string) => {
+    const c = convRepo.get(id);
+    if (c && editingValue.trim()) {
+      c.title = editingValue.trim();
+      convRepo.save(c);
+    }
+    setEditingId(null);
+  };
+
+  const handleRenameProject = (id: string) => {
+    const p = projRepo.get(id);
+    if (p && editingValue.trim()) {
+      p.name = editingValue.trim();
+      projRepo.save(p);
+    }
+    setEditingId(null);
   };
 
   return (
@@ -164,13 +189,30 @@ export function Sidebar({
                 <div className="px-3 py-2 text-xs text-ink-400 text-center">No projects yet</div>
               ) : (
                 projects.map((p) => (
-                  <button
-                    key={p.id}
-                    className="flex w-full items-center gap-3 rounded-lg px-3 py-1.5 text-xs font-medium text-ink-600 hover:bg-white hover:text-ink-900 transition-colors"
-                  >
-                    <Folder size={14} className="shrink-0" />
-                    <span className="truncate">{p.name}</span>
-                  </button>
+                  <div key={p.id} className="group relative flex items-center">
+                    <button
+                      onDoubleClick={() => startEditing(p.id, p.name)}
+                      className="flex w-full items-center gap-3 rounded-lg px-3 py-1.5 text-xs font-medium text-ink-600 hover:bg-white hover:text-ink-900 transition-colors pr-8"
+                    >
+                      <Folder size={14} className="shrink-0" />
+                      {editingId === p.id ? (
+                        <input
+                          type="text"
+                          value={editingValue}
+                          onChange={(e) => setEditingValue(e.target.value)}
+                          onBlur={() => handleRenameProject(p.id)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleRenameProject(p.id);
+                            if (e.key === 'Escape') setEditingId(null);
+                          }}
+                          autoFocus
+                          className="bg-transparent border-none outline-none w-full text-ink-900"
+                        />
+                      ) : (
+                        <span className="truncate">{p.name}</span>
+                      )}
+                    </button>
+                  </div>
                 ))
               )}
             </div>
@@ -204,6 +246,7 @@ export function Sidebar({
                         <div key={c.id} className="group relative flex items-center">
                           <button
                             onClick={() => handleSelectChat(c.id)}
+                            onDoubleClick={() => startEditing(c.id, c.title || 'New Chat')}
                             className={cn(
                               "flex flex-1 items-center gap-2 rounded-lg px-3 py-1.5 text-xs text-left transition-colors pr-8",
                               activeConversationId === c.id 
@@ -211,7 +254,22 @@ export function Sidebar({
                                 : "text-ink-600 hover:bg-white hover:text-ink-900"
                             )}
                           >
-                            <span className="truncate">{c.title || 'New Chat'}</span>
+                            {editingId === c.id ? (
+                              <input
+                                type="text"
+                                value={editingValue}
+                                onChange={(e) => setEditingValue(e.target.value)}
+                                onBlur={() => handleRenameConversation(c.id)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') handleRenameConversation(c.id);
+                                  if (e.key === 'Escape') setEditingId(null);
+                                }}
+                                autoFocus
+                                className="bg-transparent border-none outline-none w-full text-ink-900 font-medium"
+                              />
+                            ) : (
+                              <span className="truncate">{c.title || 'New Chat'}</span>
+                            )}
                           </button>
                           <button
                             onClick={(e) => handleDeleteChat(e, c.id)}

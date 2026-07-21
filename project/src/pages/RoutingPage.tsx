@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { GitBranch, AlertTriangle, CheckCircle2, Zap, Brain, Scale, Shield, Network, Plus, ArrowDownRight, Settings2, Gauge, Layers, type LucideIcon } from 'lucide-react';
 import type { IntentType, ModelId, RouteStrategy } from '@/lib/types';
 import { FRONTIER_MODELS, MODELS } from '@/lib/models';
-import { useQuerySessions, useActiveState } from '@/lib/storage';
+import { useQuerySessions, useAppState } from '@/lib/storage';
 import { Badge, Bar, MetricCard, StatusDot } from '@/components/ui';
 import { cn, pct, hashStr, timeAgo } from '@/lib/utils';
 
@@ -29,7 +29,7 @@ const INTENT_TYPES: IntentType[] = [
 
 export function RoutingPage() {
   const allSessions = useQuerySessions();
-  const { activeQuerySessionId } = useActiveState();
+  const { activeQuerySessionId } = useAppState();
   
   // Try to use the active session, fallback to the globally most recent session
   const activeSession = activeQuerySessionId ? allSessions.find(s => s.id === activeQuerySessionId) : null;
