@@ -12,20 +12,29 @@ import {
 } from 'lucide-react';
 import type { Route } from '@/lib/router';
 import { MODELS, FRONTIER_MODELS, formatCost, formatLatency } from '@/lib/models';
-import { useQuerySessions, useAuditLogs } from '@/lib/storage';
+import { useQuerySessions, useAuditLogs, useActiveState } from '@/lib/storage';
 import { Badge, Bar, MetricCard, Sparkline, StatusDot } from '@/components/ui';
 import { timeAgo, pct } from '@/lib/utils';
 
 export function DashboardPage({ navigate }: { navigate: (n: Route['name']) => void }) {
   const sessions = useQuerySessions();
   const auditLogs = useAuditLogs();
+  const { activeQuerySessionId } = useActiveState();
 
   const totalQueries = sessions.length;
   const totalSpend = sessions.reduce((acc, s) => acc + s.cost, 0);
-  const avgConf = sessions.length > 0 ? sessions.reduce((acc, s) => acc + s.consensus.confidence, 0) / sessions.length : 0;
   
-  // Inverse of verification score can be proxy for hallucination rate
-  const avgHallucination = sessions.length > 0 ? sessions.reduce((acc, s) => acc + (1 - s.verification.score), 0) / sessions.length : 0;
+  const activeSession = activeQuerySessionId ? sessions.find(s => s.id === activeQuerySessionId) : null;
+  const latestSession = activeSession || (sessions.length > 0 ? sessions[sessions.length - 1] : null);
+
+  // Use the active/latest session for the metrics if available, otherwise global averages
+  const avgConf = latestSession 
+    ? latestSession.consensus.confidence 
+    : (sessions.length > 0 ? sessions.reduce((acc, s) => acc + s.consensus.confidence, 0) / sessions.length : 0);
+    
+  const avgHallucination = latestSession 
+    ? (1 - latestSession.verification.score) 
+    : (sessions.length > 0 ? sessions.reduce((acc, s) => acc + (1 - s.verification.score), 0) / sessions.length : 0);
 
   // Aggregate model metrics
   const modelStats: Record<string, { calls: number; spend: number; latency: number }> = {};
@@ -38,13 +47,14 @@ export function DashboardPage({ navigate }: { navigate: (n: Route['name']) => vo
     });
   });
 
-  const recentQueries = sessions.slice(0, 5);
-  const recentLogs = auditLogs.slice(0, 8);
+  // Most recent 5
+  const recentQueries = [...sessions].reverse().slice(0, 5);
+  const recentLogs = [...auditLogs].reverse().slice(0, 8);
   
   // Dummy data for charts just so UI isn't broken/empty immediately, 
   // ideally this would be grouped by hours but we keep simple for the static sparklines
   const LATENCY_DATA = [3200, 2800, 3400, 2600, 3100, 2400, 2900, 2200, 2700, 2300, 2500, 2100];
-  const CONFIDENCE_DATA = sessions.length > 0 ? sessions.map(s => s.consensus.confidence).reverse().slice(-12) : [0.88, 0.91, 0.89, 0.93, 0.92, 0.94, 0.91, 0.95, 0.93, 0.94, 0.96, 0.94];
+  const CONFIDENCE_DATA = sessions.length > 0 ? sessions.map(s => s.consensus.confidence).slice(-12) : [0.88, 0.91, 0.89, 0.93, 0.92, 0.94, 0.91, 0.95, 0.93, 0.94, 0.96, 0.94];
 
   return (
     <div className="mx-auto max-w-7xl px-6 py-8">

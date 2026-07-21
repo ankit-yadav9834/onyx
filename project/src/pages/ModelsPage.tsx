@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { BarChart3, DollarSign, Clock, Target, AlertTriangle } from 'lucide-react';
 import { MODELS, FRONTIER_MODELS, FAST_MODELS, JUDGE_MODELS, formatCost, formatLatency } from '@/lib/models';
-import { useQuerySessions } from '@/lib/storage';
+import { useQuerySessions, useActiveState } from '@/lib/storage';
 import { Badge, Bar, MetricCard, Sparkline } from '@/components/ui';
 import { cn, pct } from '@/lib/utils';
 
@@ -13,10 +13,14 @@ function genSparkline(seed: number): number[] {
 
 export function ModelsPage() {
   const sessions = useQuerySessions();
+  const { activeQuerySessionId } = useActiveState();
   const [tier, setTier] = useState<'all' | 'frontier' | 'fast' | 'judge'>('all');
   const filtered = tier === 'all' ? ALL_IDS : tier === 'frontier' ? FRONTIER_MODELS : tier === 'fast' ? FAST_MODELS : JUDGE_MODELS;
 
-  // Aggregate stats per model
+  const activeSession = activeQuerySessionId ? sessions.find(s => s.id === activeQuerySessionId) : null;
+  const targetSessions = activeSession ? [activeSession] : sessions;
+
+  // Aggregate stats per model based on targetSessions
   const modelStats: Record<string, { calls: number; spend: number; latency: number; confidence: number; hallucination: number; success: number }> = {};
   
   // Initialize with empty so everything appears
@@ -24,7 +28,7 @@ export function ModelsPage() {
     modelStats[id] = { calls: 0, spend: 0, latency: 0, confidence: 0, hallucination: 0, success: 0 };
   });
 
-  sessions.forEach(s => {
+  targetSessions.forEach(s => {
     s.models.forEach(m => {
       if (!modelStats[m.id]) return;
       modelStats[m.id].calls++;

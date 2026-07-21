@@ -1,17 +1,19 @@
 import { useState } from 'react';
 import { ScrollText, Search, Download, Filter, ChevronRight, Cpu } from 'lucide-react';
-import { useAuditLogs } from '@/lib/storage';
+import { useAuditLogs, useActiveState } from '@/lib/storage';
 import { Badge } from '@/components/ui';
 import { cn, formatDateTime, timeAgo } from '@/lib/utils';
 import { formatCost, formatLatency } from '@/lib/models';
 
 export function AuditPage() {
   const allLogs = useAuditLogs();
+  const { activeQuerySessionId } = useActiveState();
   const [filter, setFilter] = useState<'all' | 'success' | 'error'>('all');
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<string | null>(null);
 
   const filtered = allLogs.filter((e) => {
+    if (activeQuerySessionId && e.queryId !== activeQuerySessionId) return false;
     if (filter !== 'all' && e.status !== filter) return false;
     if (search && !e.eventId.includes(search) && !e.promptPreview.toLowerCase().includes(search.toLowerCase()) && !e.selectedModel.includes(search)) return false;
     return true;

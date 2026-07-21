@@ -14,7 +14,7 @@ import {
 import { Badge, Bar, MetricCard, ScoreRing } from '@/components/ui';
 import { cn, pct } from '@/lib/utils';
 import { MODELS } from '@/lib/models';
-import { useQuerySessions } from '@/lib/storage';
+import { useQuerySessions, useActiveState } from '@/lib/storage';
 
 const CHECK_ICONS: Record<string, any> = {
   'Fact Check': Brain,
@@ -42,7 +42,11 @@ const JUDGE_MODELS = ['gpt-5-judge', 'claude-judge', 'gemma-3-27b'] as const;
 
 export function VerificationPage() {
   const [selectedCheck, setSelectedCheck] = useState(0);
-  const sessions = useQuerySessions();
+  const allSessions = useQuerySessions();
+  const { activeQuerySessionId } = useActiveState();
+
+  const activeSession = activeQuerySessionId ? allSessions.find(s => s.id === activeQuerySessionId) : null;
+  const sessions = activeSession ? [activeSession] : allSessions;
 
   // Aggregate checks across all sessions
   const aggregatedChecks = new Map<string, { total: number; passed: number; latencyMs: number; model: string }>();

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, MouseEvent } from 'react';
 import {
   GitBranch,
   Network,
@@ -17,12 +17,13 @@ import {
   ChevronRight,
   MessageSquare,
   Folder,
+  Trash,
   type LucideIcon,
 } from 'lucide-react';
 import type { Route } from '@/lib/router';
 import { cn } from '@/lib/utils';
 import { Wordmark } from './Logo';
-import { useConversations, useProjects, type Conversation, type Project } from '@/lib/storage';
+import { useConversations, useProjects, type Conversation, type Project, useActiveState, useStorage } from '@/lib/storage';
 
 const DEV_TOOLS_NAV: { id: Route['name']; label: string; icon: LucideIcon }[] = [
   { id: 'routing', label: 'AI Routing', icon: GitBranch },
@@ -60,16 +61,12 @@ export function Sidebar({
   route,
   navigate,
   collapsed,
-  onToggle,
-  activeConversationId,
-  onSelectConversation
+  onToggle
 }: {
   route: Route;
   navigate: (n: Route['name']) => void;
   collapsed: boolean;
   onToggle: () => void;
-  activeConversationId?: string | null;
-  onSelectConversation?: (id: string | null) => void;
 }) {
   const [devToolsOpen, setDevToolsOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(true);
@@ -77,20 +74,27 @@ export function Sidebar({
   
   const conversations = useConversations();
   const projects = useProjects();
+  const { activeConversationId, setActiveConversationId, startNewChat } = useActiveState();
+  const { conversations: convRepo } = useStorage();
   
   const conversationGroups = groupConversations(conversations);
 
   const handleNewChat = () => {
     navigate('workspace');
-    if (onSelectConversation) {
-      onSelectConversation(null);
-    }
+    startNewChat();
   };
 
   const handleSelectChat = (id: string) => {
     navigate('workspace');
-    if (onSelectConversation) {
-      onSelectConversation(id);
+    setActiveConversationId(id);
+  };
+
+  const handleDeleteChat = (e: MouseEvent, id: string) => {
+    e.stopPropagation();
+    convRepo.delete(id);
+    if (activeConversationId === id) {
+      startNewChat();
+      navigate('workspace');
     }
   };
 
@@ -197,18 +201,29 @@ export function Sidebar({
                     <div className="px-3 py-1 text-2xs font-semibold text-ink-400">{group}</div>
                     <div className="space-y-0.5">
                       {convos.map(c => (
-                        <button
-                          key={c.id}
-                          onClick={() => handleSelectChat(c.id)}
-                          className={cn(
-                            "flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-xs text-left transition-colors",
-                            activeConversationId === c.id 
-                              ? "bg-ink-100 text-ink-900 font-medium" 
-                              : "text-ink-600 hover:bg-white hover:text-ink-900"
-                          )}
-                        >
-                          <span className="truncate">{c.title || 'New Chat'}</span>
-                        </button>
+                        <div key={c.id} className="group relative flex items-center">
+                          <button
+                            onClick={() => handleSelectChat(c.id)}
+                            className={cn(
+                              "flex flex-1 items-center gap-2 rounded-lg px-3 py-1.5 text-xs text-left transition-colors pr-8",
+                              activeConversationId === c.id 
+                                ? "bg-ink-100 text-ink-900 font-medium" 
+                                : "text-ink-600 hover:bg-white hover:text-ink-900"
+                            )}
+                          >
+                            <span className="truncate">{c.title || 'New Chat'}</span>
+                          </button>
+                          <button
+                            onClick={(e) => handleDeleteChat(e, c.id)}
+                            className={cn(
+                              "absolute right-2 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-ink-200 text-ink-400 hover:text-ink-900",
+                              activeConversationId === c.id && "opacity-100"
+                            )}
+                            title="Delete Chat"
+                          >
+                            <Trash size={12} />
+                          </button>
+                        </div>
                       ))}
                     </div>
                   </div>

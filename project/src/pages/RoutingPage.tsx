@@ -1,28 +1,17 @@
 import { useState } from 'react';
-import {
-  GitBranch,
-  Plus,
-  ArrowDownRight,
-  Settings2,
-  Zap,
-  DollarSign,
-  ShieldCheck,
-  Gauge,
-  Layers,
-  type LucideIcon,
-} from 'lucide-react';
+import { GitBranch, AlertTriangle, CheckCircle2, Zap, Brain, Scale, Shield, Network, Plus, ArrowDownRight, Settings2, Gauge, Layers, type LucideIcon } from 'lucide-react';
 import type { IntentType, ModelId, RouteStrategy } from '@/lib/types';
 import { FRONTIER_MODELS, MODELS } from '@/lib/models';
-import { useQuerySessions } from '@/lib/storage';
-import { Badge, Bar } from '@/components/ui';
-import { cn, pct, hashStr } from '@/lib/utils';
+import { useQuerySessions, useActiveState } from '@/lib/storage';
+import { Badge, Bar, MetricCard, StatusDot } from '@/components/ui';
+import { cn, pct, hashStr, timeAgo } from '@/lib/utils';
 
 const STRATEGIES: { id: RouteStrategy; label: string; icon: LucideIcon; desc: string }[] = [
-  { id: 'quality', label: 'Quality', icon: ShieldCheck, desc: 'Maximize output quality & verification score' },
+  { id: 'quality', label: 'Quality', icon: Shield, desc: 'Maximize output quality & verification score' },
   { id: 'latency', label: 'Latency', icon: Zap, desc: 'Minimize response time for real-time use' },
-  { id: 'cost', label: 'Cost', icon: DollarSign, desc: 'Optimize spend per query' },
-  { id: 'balanced', label: 'Balanced', icon: Gauge, desc: 'Trade-off across all dimensions' },
-  { id: 'privacy', label: 'Privacy', icon: ShieldCheck, desc: 'Enterprise-only models for regulated data' },
+  { id: 'cost', label: 'Cost', icon: Scale, desc: 'Optimize spend per query' },
+  { id: 'balanced', label: 'Balanced', icon: Network, desc: 'Trade-off across all dimensions' },
+  { id: 'privacy', label: 'Privacy', icon: Shield, desc: 'Enterprise-only models for regulated data' },
 ];
 
 const INTENT_TYPES: IntentType[] = [
@@ -39,10 +28,14 @@ const INTENT_TYPES: IntentType[] = [
 ];
 
 export function RoutingPage() {
-  const sessions = useQuerySessions();
+  const allSessions = useQuerySessions();
+  const { activeQuerySessionId } = useActiveState();
   
-  // Default to the last used strategy or 'balanced'
-  const latestSession = sessions[0];
+  // Try to use the active session, fallback to the globally most recent session
+  const activeSession = activeQuerySessionId ? allSessions.find(s => s.id === activeQuerySessionId) : null;
+  const sessions = activeSession ? [activeSession] : allSessions;
+  
+  const latestSession = activeSession || (allSessions.length > 0 ? allSessions[allSessions.length - 1] : null);
   const defaultStrategy = latestSession?.routing?.strategy as RouteStrategy || 'balanced';
 
   const [strategy, setStrategy] = useState<RouteStrategy>(defaultStrategy);

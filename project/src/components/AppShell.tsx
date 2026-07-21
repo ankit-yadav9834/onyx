@@ -7,15 +7,11 @@ export function AppShell({
   route, 
   navigate, 
   onToggleTransparency,
-  activeConversationId,
-  onSelectConversation,
   children 
 }: { 
   route: Route; 
   navigate: (n: Route['name']) => void; 
   onToggleTransparency?: () => void;
-  activeConversationId?: string | null;
-  onSelectConversation?: (id: string | null) => void;
   children: React.ReactNode 
 }) {
   const [collapsed, setCollapsed] = useState(false);
@@ -26,8 +22,6 @@ export function AppShell({
         navigate={navigate} 
         collapsed={collapsed} 
         onToggle={() => setCollapsed((c) => !c)} 
-        activeConversationId={activeConversationId}
-        onSelectConversation={onSelectConversation}
       />
       <div className="flex flex-1 flex-col overflow-hidden">
         <Topbar route={route} onToggleTransparency={onToggleTransparency} />

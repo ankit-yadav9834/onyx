@@ -1,19 +1,18 @@
 import { useState, useMemo } from 'react';
 import { Search as SearchIcon, MessageSquare, Folder, Clock, ChevronRight } from 'lucide-react';
-import { useConversations, useProjects } from '@/lib/storage';
+import { useConversations, useProjects, useActiveState } from '@/lib/storage';
 import { timeAgo } from '@/lib/utils';
 import type { Route } from '@/lib/router';
 
 export function SearchPage({ 
   navigate,
-  onSelectConversation 
 }: { 
   navigate: (n: Route['name']) => void;
-  onSelectConversation: (id: string) => void;
 }) {
   const [query, setQuery] = useState('');
   const conversations = useConversations();
   const projects = useProjects();
+  const { setActiveConversationId } = useActiveState();
 
   const results = useMemo(() => {
     if (!query.trim()) return { conversations: [], projects: [] };
@@ -86,7 +85,7 @@ export function SearchPage({
                     <button 
                       key={c.id} 
                       onClick={() => {
-                        onSelectConversation(c.id);
+                        setActiveConversationId(c.id);
                         navigate('workspace');
                       }}
                       className="flex items-center justify-between rounded-xl border border-line bg-white p-4 text-left transition-colors hover:border-ink-300 hover:shadow-sm"

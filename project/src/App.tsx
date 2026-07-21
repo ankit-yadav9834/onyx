@@ -12,11 +12,11 @@ import { AuditPage } from '@/pages/AuditPage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { AdminPage } from '@/pages/AdminPage';
 import { SearchPage } from '@/pages/SearchPage';
+import { ActiveStateProvider } from '@/lib/storage';
 
-function App() {
+function AppContent() {
   const { route, navigate } = useRouter();
   const [isTransparencyOpen, setIsTransparencyOpen] = useState(false);
-  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
 
   if (route.name === 'landing') {
     return <LandingPage navigate={navigate} />;
@@ -27,19 +27,15 @@ function App() {
       route={route} 
       navigate={navigate}
       onToggleTransparency={() => setIsTransparencyOpen(t => !t)}
-      activeConversationId={activeConversationId}
-      onSelectConversation={setActiveConversationId}
     >
       {route.name === 'dashboard' && <DashboardPage navigate={navigate} />}
       {route.name === 'workspace' && (
         <WorkspacePage 
           isTransparencyOpen={isTransparencyOpen} 
           onCloseTransparency={() => setIsTransparencyOpen(false)} 
-          activeConversationId={activeConversationId}
-          onConversationChange={setActiveConversationId}
         />
       )}
-      {route.name === 'search' && <SearchPage navigate={navigate} onSelectConversation={setActiveConversationId} />}
+      {route.name === 'search' && <SearchPage navigate={navigate} />}
       {route.name === 'consensus' && <ConsensusPage />}
       {route.name === 'routing' && <RoutingPage />}
       {route.name === 'verification' && <VerificationPage />}
@@ -51,4 +47,10 @@ function App() {
   );
 }
 
-export default App;
+export default function App() {
+  return (
+    <ActiveStateProvider>
+      <AppContent />
+    </ActiveStateProvider>
+  );
+}

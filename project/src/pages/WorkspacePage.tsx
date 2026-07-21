@@ -64,20 +64,17 @@ const FOLLOW_UPS = [
   "Continue research",
 ];
 
-import { useStorage } from '@/lib/storage';
+import { useStorage, useActiveState } from '@/lib/storage';
 
 export function WorkspacePage({
   isTransparencyOpen,
   onCloseTransparency,
-  activeConversationId,
-  onConversationChange
 }: {
   isTransparencyOpen?: boolean;
   onCloseTransparency?: () => void;
-  activeConversationId?: string | null;
-  onConversationChange?: (id: string | null) => void;
 }) {
   const { conversations, querySessions, auditLogs, settings } = useStorage();
+  const { activeConversationId, setActiveConversationId, setActiveQuerySessionId } = useActiveState();
   
   // Load conversation if activeConversationId is provided
   const [messages, setMessages] = useState<Message[]>([]);
@@ -153,6 +150,7 @@ export function WorkspacePage({
           
           querySessions.save(session);
           auditLogs.save(auditLog);
+          setActiveQuerySessionId(session.id); // BUG FIX: Set active query session
           
           let updatedMessages: Message[] = [];
           setMessages(prev => {
@@ -183,8 +181,8 @@ export function WorkspacePage({
             lastMessage: orchestrated.finalAnswer?.slice(0, 50) + '...',
           });
           
-          if (!activeConversationId && onConversationChange) {
-            onConversationChange(convId);
+          if (!activeConversationId) {
+            setActiveConversationId(convId);
           }
           
           setRunning(false);
@@ -217,15 +215,15 @@ export function WorkspacePage({
             messages: updatedMessages,
           });
 
-          if (!activeConversationId && onConversationChange) {
-            onConversationChange(convId);
+          if (!activeConversationId) {
+            setActiveConversationId(convId);
           }
 
           setRunning(false);
         });
       }
     }, 350);
-  }, [running, activeConversationId, conversations, querySessions, auditLogs, settings, onConversationChange]);
+  }, [running, activeConversationId, conversations, querySessions, auditLogs, settings, setActiveConversationId, setActiveQuerySessionId]);
 
   const latestResult = messages.slice().reverse().find(m => m.role === 'assistant' && m.result)?.result;
 

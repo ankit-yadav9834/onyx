@@ -1,17 +1,29 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Network, Target, AlertTriangle, CheckCircle2, TrendingUp, Layers, GitMerge } from 'lucide-react';
 import { FRONTIER_MODELS, MODELS } from '@/lib/models';
-import { useQuerySessions } from '@/lib/storage';
+import { useQuerySessions, useActiveState } from '@/lib/storage';
 import { Badge, Bar, ScoreRing, MetricCard } from '@/components/ui';
 import { cn, pct } from '@/lib/utils';
 import type { QuerySession } from '@/lib/types';
 
 export function ConsensusPage() {
-  const [selected, setSelected] = useState(0);
   const allSessions = useQuerySessions();
+  const { activeQuerySessionId } = useActiveState();
+  const [selected, setSelected] = useState(0);
 
   // Show at most 10 recent sessions for the consensus view
-  const sessions = allSessions.slice(0, 10);
+  const sessions = [...allSessions].reverse().slice(0, 10);
+  
+  // Keep the selected index in sync with the active session
+  useEffect(() => {
+    if (activeQuerySessionId) {
+      const idx = sessions.findIndex(s => s.id === activeQuerySessionId);
+      if (idx !== -1) {
+        setSelected(idx);
+      }
+    }
+  }, [activeQuerySessionId, sessions.length]);
+
   const session = sessions[selected];
 
   const avgAgreement = allSessions.length > 0 
