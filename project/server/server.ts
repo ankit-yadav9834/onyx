@@ -1,7 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import { complete } from './provider.js';
+import { complete } from './provider';
 
 dotenv.config();
 
