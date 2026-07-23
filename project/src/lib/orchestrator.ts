@@ -342,8 +342,16 @@ export async function runFullPipeline(messages: Message[], modelToUse: string = 
     });
     
     if (!res.ok) {
-      const error = await res.json();
-      throw new Error(error.error || error.details || 'Unknown backend error');
+      const text = await res.text();
+      let errorMsg = `HTTP ${res.status}`;
+      try {
+        const errorObj = JSON.parse(text);
+        errorMsg = errorObj.error || errorObj.details || errorMsg;
+      } catch (e) {
+        // Handle non-JSON Vercel error pages (404, 500)
+        errorMsg = `${errorMsg}: ${text.slice(0, 60).replace(/<[^>]*>?/gm, '')}`;
+      }
+      throw new Error(`Backend Error: ${errorMsg}`);
     }
     
     const data = await res.json();

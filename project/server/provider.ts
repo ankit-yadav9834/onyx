@@ -7,7 +7,7 @@
  */
 
 import OpenAI from 'openai';
-import dotenv from 'dotenv';
+import * as dotenv from 'dotenv';
 
 dotenv.config();
 
@@ -48,6 +48,10 @@ const config: ProviderConfig = {
 const client = new OpenAI({
   baseURL: config.baseURL,
   apiKey: config.apiKey,
+  defaultHeaders: {
+    'HTTP-Referer': config.referer || '',
+    'X-Title': config.title || '',
+  },
 });
 
 export async function complete(req: CompletionRequest): Promise<CompletionResponse> {
@@ -73,10 +77,6 @@ export async function complete(req: CompletionRequest): Promise<CompletionRespon
         .map(m => ({ role: m.role as 'user' | 'assistant', content: m.content || '' }))
         .filter(m => m.content.length > 0),
     ],
-    extra_headers: {
-      'HTTP-Referer': config.referer || '',
-      'X-Title': config.title || '',
-    },
   });
 
   const latency = Math.round(performance.now() - startTime);
